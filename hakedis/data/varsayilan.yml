@@ -1,0 +1,188 @@
+# hakedis varsayilan yapilandirmasi
+#
+# Bu dosyayi kopyalayip kendi ofis standardiniza gore duzenleyin:
+#   hakedis config-yaz --cikti ofis.yml
+#   hakedis metraj plan.dxf --config ofis.yml
+#
+# Katman esleme desenleri REGEX'tir ve buyuk/kucuk harf duyarsizdir.
+# Turkce karakterli katman adlari icin hem "İ/I" hem "S/Ş" varyantlari yazilmistir.
+
+# --- Cizim birimi ------------------------------------------------------------
+# DXF basliginda $INSUNITS tanimliysa o kullanilir. Tanimsizsa veya
+# --birim ile ezilirse buradaki deger gecerlidir.
+birim: cm            # mm | cm | m
+
+# --- Kat bilgileri -----------------------------------------------------------
+kat:
+  ad: "Normal Kat"
+  # Kat yuksekligi (dosemenin ust kotundan bir ust dosemenin ust kotuna), m
+  kat_yuksekligi: 3.00
+  # Varsayilan doseme kalinligi (etiketten okunamazsa), m
+  doseme_kalinligi: 0.15
+  # Varsayilan kiris kesiti (etiketten okunamazsa), m
+  kiris_genisligi: 0.25
+  kiris_yuksekligi: 0.50
+  # Varsayilan perde kalinligi (geometriden okunamazsa), m
+  perde_kalinligi: 0.25
+
+# --- Katman esleme -----------------------------------------------------------
+katmanlar:
+  kolon:
+    - '^(A-)?KOLON'
+    - '^S-?KOLON'
+    - '^KOL$'
+    - '^COLUMN'
+    - '^K[-_]?KOLON'
+  perde:
+    - '^PERDE'
+    - '^P-?PERDE'
+    - '^SHEARWALL'
+    - '^WALL[-_]?RC'
+  kiris:
+    - '^KIRIS'
+    - '^KİRİŞ'
+    - '^KIRIŞ'
+    - '^KİRIS'
+    - '^BEAM'
+    - '^K-?KIRIS'
+  doseme:
+    - '^DOSEME'
+    - '^DÖŞEME'
+    - '^DOSEME[-_]?SINIR'
+    - '^SLAB'
+    - '^PLAK'
+  bosluk:
+    - 'BOSLUK'
+    - 'BOŞLUK'
+    - 'OPENING'
+    - 'SAFT'
+    - 'ŞAFT'
+    - 'ASANSOR'
+    - 'ASANSÖR'
+  merdiven:
+    - '^MERDIVEN'
+    - '^MERDİVEN'
+    - '^STAIR'
+  metin:
+    - '^(TEXT|YAZI|METIN|METİN|ETIKET|ETİKET)'
+    - 'ISIM'
+    - 'İSİM'
+    - '^S-?TEXT'
+  # Metraja hic girmeyecek katmanlar (aks, olculendirme, tarama vs.)
+  yoksay:
+    - '^AKS'
+    - '^OLCU'
+    - '^ÖLÇÜ'
+    - '^DIM'
+    - '^TARAMA'
+    - '^HATCH'
+    - '^ANTET'
+    - '^CERCEVE'
+    - '^ÇERÇEVE'
+    - '^DEFPOINTS$'
+    - '^MIMARI'
+    - '^MİMARİ'
+    - '^KOTA'
+    - '^DONATI'
+
+# --- Geometrik sezgiseller ---------------------------------------------------
+# Katman adlari guvenilmezse (ozellikle PDF'te) eleman tipini bicimden tahmin et
+sezgisel:
+  aktif: true
+  # Kapali poligonun narinligi (uzun kenar / kisa kenar) bu esigi asarsa
+  # kolon degil perde sayilir.
+  perde_narinlik_esigi: 4.0
+  # Kolon kesiti icin gecerli kenar araligi (m)
+  kolon_min_kenar: 0.20
+  kolon_max_kenar: 2.00
+  # Perde kalinligi araligi (m)
+  perde_min_kalinlik: 0.15
+  perde_max_kalinlik: 1.00
+  # Kiris genisligi araligi (m) - paralel cizgi eslemede kullanilir
+  kiris_min_genislik: 0.15
+  kiris_max_genislik: 1.00
+  kiris_min_uzunluk: 0.50
+  # Doseme sayilabilmesi icin en kucuk alan (m2)
+  doseme_min_alan: 1.00
+  # Bu alanin altindaki kapali poligonlar gurultu sayilir (m2)
+  min_poligon_alani: 0.02
+
+# --- Etiket (yazi) okuma -----------------------------------------------------
+etiket:
+  # Yaziyi elemana baglarken aranacak azami uzaklik (m).
+  # Yazi elemanin icindeyse mesafeye bakilmaz.
+  arama_yaricapi: 1.50
+  # "K101 25/50" gibi kesit yazan etiketlerdeki olcu birimi
+  kesit_birimi: cm
+  # Ozel desenler (regex). Adlandirilmis gruplar: ad, b, h, t
+  desenler:
+    kesit:
+      - '(?P<ad>[A-ZÇĞİÖŞÜ]{1,3}[-_ ]?\d{1,4}[A-Za-z]?)\s*[\(\[]?\s*(?P<b>\d{1,3}(?:[.,]\d+)?)\s*[\/xX\*]\s*(?P<h>\d{1,3}(?:[.,]\d+)?)'
+    kalinlik:
+      - '(?:TD|KAL|T|H)\s*[=:]\s*(?P<t>\d{1,3}(?:[.,]\d+)?)'
+      # "P1 25", "P12 (30)" -> perde adi + kalinligi
+      - '^(?P<ad>[PD][-_ ]?\d{1,3}[A-Za-z]?)\s*[\(\[]?\s*(?P<t>\d{1,3}(?:[.,]\d+)?)\s*[\)\]]?$'
+      - '(?P<ad>D\d{1,3})\s*[\(\[]?\s*(?P<t>\d{1,3}(?:[.,]\d+)?)\s*[\)\]]?'
+    ad:
+      - '^(?P<ad>[SKPD][-_ ]?\d{1,4}[A-Za-z]?)$'
+
+# --- Metraj kurallari --------------------------------------------------------
+metraj:
+  # Kolon/perde net yuksekligi = kat yuksekligi - doseme kalinligi
+  kolon_net_yukseklik_dusumu: doseme      # doseme | kiris | yok
+  # Kiris betonu: kiris yuksekliginden doseme kalinligi dusulsun mu?
+  kiris_betonu_doseme_dusumu: true
+  # Kiris yan kalibi: (h - doseme kalinligi) yuzeyinden hesaplanir
+  kiris_yan_kalip_doseme_dusumu: true
+  # Doseme kalibi dosemenin altindan alinir; kiris genislikleri dusulur mu?
+  doseme_kalibindan_kiris_dus: true
+  # Kolon/perde kesit alanlari da doseme kalibindan dusulsun mu?
+  # (ofis pratigine gore degisir; kirislerle cakisma birlesim alinarak
+  #  hesaplandigi icin cifte dusum olusmaz)
+  doseme_kalibindan_mesnet_dus: true
+  # Kolon/perde kalibinda kirislerin sapladigi yuzey dusulsun mu?
+  kolon_kalibindan_kiris_dus: true
+  # Kirisin kolon/perde icinde kalan boyu net acikliktan dusulur (kirik olcu)
+  kiris_net_aciklik: true
+  # Yuvarlama basamagi (rapor icin)
+  yuvarlama: 3
+
+# --- Poz numaralari ----------------------------------------------------------
+# Kendi birim fiyat/poz sisteminize gore degistirin.
+pozlar:
+  kolon_beton: "16.058/1-K"
+  kolon_kalip: "21.011/K"
+  perde_beton: "16.058/1-P"
+  perde_kalip: "21.011/P"
+  kiris_beton: "16.058/1-Kr"
+  kiris_kalip: "21.011/Kr"
+  doseme_beton: "16.058/1-D"
+  doseme_kalip: "21.011/D"
+  merdiven_beton: "16.058/1-M"
+  merdiven_kalip: "21.011/M"
+
+# --- PDF'e ozel ayarlar ------------------------------------------------------
+pdf:
+  # Pafta olcegi. "1/50" veya sayisal 50. Kalibrasyon verilirse o oncelikli.
+  olcek: "1/50"
+  sayfa: 1
+  # PDF'te katman yoktur; cizgi rengi/kalinligi ile eleman tipi eslenir.
+  # Renkler "#RRGGBB" veya "siyah/kirmizi/mavi/yesil" olabilir.
+  # Once `hakedis pdf-incele plan.pdf` calistirip gercek renkleri gorun.
+  renk_esleme: {}
+  # Ornek:
+  # renk_esleme:
+  #   "#ff0000": kolon
+  #   "#0000ff": kiris
+  #   "#00ff00": doseme
+  # Cok ince cizgileri (tarama, olculendirme) at
+  min_cizgi_kalinligi: 0.0
+  # Yazilari da oku
+  metin_oku: true
+  # Iki nokta kalibrasyonu (olcekten daha guvenilirdir; tanimliysa oncelikli).
+  # Paftada boyu bilinen bir mesafeyi (ornegin bir aks araligini) PDF
+  # puntosu cinsinden olcup gercek karsiligini yazin.
+  # CLI karsiligi: --kalibre 340.5:6.00
+  # kalibrasyon:
+  #   pdf_mesafe: 340.5      # punto
+  #   gercek_mesafe: 6.00    # metre

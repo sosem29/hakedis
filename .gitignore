@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+
+# Uretilen metraj ciktilari
+*.metraj.xlsx
+*.kontrol.svg
+*.metraj.json
+ornek/kalip_plani.dxf
