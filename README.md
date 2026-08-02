@@ -63,15 +63,45 @@ Kullanılan bileşenlerin tamamı açık kaynak ve ücretsizdir:
 hakedis ornek deneme.dxf
 hakedis metraj deneme.dxf
 
-# 2. Kendi çiziminizle: önce katmanları görün
-hakedis katmanlar plan.dwg
+# 2. Kendi çiziminizle: doğrudan çalıştırın, ayar gerekmez
+hakedis metraj plan.dwg --kat "3. Normal Kat" --kat-yuksekligi 3.20
+```
 
-# 3. Ofis ayarlarınızı oluşturup katman adlarınızı girin
-hakedis config-yaz --cikti ofis.yml
+**Katman adlarınızı yapılandırmanız gerekmez.** Katman adı tanınmazsa sistem
+onu atmaz; geometrik imzasından ne olduğunu çıkarır (aşağıya bakın). Aynı
+projeyi sık işleyecekseniz eşlemeyi bir kez kalıcı hale getirebilirsiniz:
 
-# 4. Metrajı çıkarın
-hakedis metraj plan.dwg --config ofis.yml \
-    --kat "3. Normal Kat" --kat-yuksekligi 3.20 --doseme-kalinligi 0.15
+```bash
+hakedis kesfet plan.dwg                      # ne bulduğunu göster
+hakedis kesfet plan.dwg --cikti ofis.yml     # eşlemeyi dosyaya yaz
+hakedis metraj plan.dwg --config ofis.yml
+```
+
+### Otomatik katman keşfi
+
+Katman adları her ofiste, hatta her projede farklıdır — `KOLON`, `S-KOL`,
+`A$C-DIKME-01`... Bunu size sordurmak yerine çizimden okuruz:
+
+| İmza | Sonuç |
+|---|---|
+| 0.20–2.00 m kenarlı, tıknaz kapalı kesitler | kolon |
+| 0.15–1.00 m kalınlıkta narin **veya L/T/U** kesitler | perde |
+| 0.15–1.00 m aralıkla paralel çizgi çiftleri | kiriş |
+| çizimin en büyük kapalı alanı | döşeme |
+| döşeme içinde, **çevresinde kiriş ucu olmayan** kapalı alan | boşluk |
+| çifti olmayan bağımsız uzun çizgiler | aks/ölçü (yoksayılır) |
+
+L/T/U perdelerde sınır dikdörtgeninin kısa kenarı kalınlık *değildir*; gerçek
+kalınlık karşılıklı yüz eşlemesiyle bulunur. Boşluk ile kolon plan görünüşünde
+aynıdır — ayırt edici işaret taşıyıcı sistemdedir: kolonlar kirişlerin
+bittiği yerdedir, boşlukların çevresinde kiriş ucu yoktur.
+
+Bu yolla bulunan elemanlar **daha düşük güvenle** raporlanır: kontrol
+paftasında `!` ile görünür ve Uyarılar sayfasına düşer.
+
+```bash
+hakedis katmanlar plan.dwg      # katman -> tip eşlemesini görmek için
+hakedis config-yaz -o ofis.yml  # tüm ayarları elle düzenlemek isterseniz
 ```
 
 Çıktılar:
@@ -176,11 +206,14 @@ Kontrol paftasını ve Uyarılar sayfasını okumadan hakedişe girmeyin.
 
 ```bash
 pip install -e ".[test]"
-pytest -q          # 77 test: geometri, etiket, uçtan uca DXF ve PDF
+pytest -q          # 84 test: geometri, etiket, otomatik keşif, DXF ve PDF
 ```
 
 Uçtan uca testlerdeki beklenen değerler elle hesaplanmıştır, böylece metraj
-formüllerinin sessizce değişmesi engellenir.
+formüllerinin sessizce değişmesi engellenir. Ayrı bir test, aynı planı
+tamamen tanınmayan katman adlarıyla (`A$C-DIKME-01`, `BA_WALL_X`, ...)
+yeniden yazıp sıfır yapılandırmayla **birebir aynı metrajın** çıktığını
+doğrular.
 
 ## Lisans
 

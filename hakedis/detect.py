@@ -292,22 +292,46 @@ def elemanlari_tespit_et(
     etiketler = etiketleri_topla(gruplar["metin"] + eslenmemis, ayarlar)
 
     sezgisel_aktif = bool(ayarlar.al("sezgisel.aktif", True))
-    if eslenmemis and sezgisel_aktif and not any(
-        gruplar.get(t) for t in ("kolon", "perde", "kiris", "doseme")
-    ):
-        uyarilar.append(
-            f"Hicbir katman adi yapilandirmayla eslesmedi ({len(eslenmemis)} varlik). "
-            f"Sezgisel mod devreye girdi; sonuclari kontrol paftasindan mutlaka "
-            f"dogrulayin. Katman adlarinizi gormek icin: hakedis katmanlar <dosya>"
+    otomatik_katmanlar: dict[str, str] = {}
+    if eslenmemis and sezgisel_aktif:
+        # Katman adi taninmadi diye varliklari atmayiz; geometrik imzalarindan
+        # ne olduklarini cikarmayi deneriz. Katman adlari her ofiste farklidir,
+        # bunu kullaniciya sordurmak yerine cizimden okuruz.
+        from hakedis.otomatik import katman_onerileri
+
+        otomatik_katmanlar = katman_onerileri(
+            Cizim(varliklar=eslenmemis, kaynak=cizim.kaynak), ayarlar
         )
-        # Sezgisel modda tum eslenmemis varliklar tek havuza girer
-        gruplar["sezgisel"] = eslenmemis
-    elif eslenmemis:
-        adlar = sorted({v.katman for v in eslenmemis})[:12]
-        uyarilar.append(
-            f"{len(eslenmemis)} varlik hicbir katman desenine uymadigi icin "
-            f"metraja girmedi. Eslenmeyen katmanlar: {', '.join(adlar)}"
-        )
+        yerlesen = 0
+        for v in eslenmemis:
+            tip = otomatik_katmanlar.get(v.katman)
+            if tip and tip not in ("yoksay", "metin"):
+                gruplar[tip].append(v)
+                yerlesen += 1
+
+        if yerlesen:
+            ozet = ", ".join(
+                f"{ad} -> {tip}"
+                for ad, tip in sorted(otomatik_katmanlar.items())
+                if tip not in ("yoksay", "metin")
+            )
+            uyarilar.append(
+                f"{yerlesen} varligin katman adi taninmadi; geometrik imzadan "
+                f"otomatik siniflandirildi ({ozet}). Ayrintili dokum ve kalici "
+                f"yapilandirma icin: hakedis kesfet <dosya> --cikti ofis.yml"
+            )
+        kalan = [
+            v
+            for v in eslenmemis
+            if otomatik_katmanlar.get(v.katman) in (None, "yoksay", "metin")
+            and v.tur != "metin"
+        ]
+        if kalan:
+            adlar = sorted({v.katman for v in kalan})[:12]
+            uyarilar.append(
+                f"{len(kalan)} varlik hicbir eleman tipine oturtulamadi ve "
+                f"metraja girmedi. Ilgili katmanlar: {', '.join(adlar)}"
+            )
 
     elemanlar: list[Eleman] = []
 
@@ -398,9 +422,16 @@ def elemanlari_tespit_et(
         e.guven = 0.5
         elemanlar.append(e)
 
-    # --- Sezgisel havuz ---------------------------------------------------
-    if "sezgisel" in gruplar:
-        elemanlar.extend(_sezgisel_tespit(gruplar["sezgisel"], ayarlar))
+    # --- Otomatik siniflandirilanlari isaretle ---------------------------
+    # Katman adindan degil geometriden cikarilan elemanlar daha dusuk guvenle
+    # raporlanir; kontrol paftasinda "!" ile gorunurler.
+    for e in elemanlar:
+        if e.kaynak_katman in otomatik_katmanlar:
+            e.guven = min(e.guven, 0.65)
+            e.not_ekle(
+                f"Katman adi ('{e.kaynak_katman}') taninmadi; tip geometrik "
+                f"imzadan otomatik belirlendi. Kontrol paftasindan dogrulayin."
+            )
 
     # --- Kirislerin net acikligi -----------------------------------------
     if bool(ayarlar.al("metraj.kiris_net_aciklik", True)):
@@ -419,37 +450,6 @@ def elemanlari_tespit_et(
         )
 
     return elemanlar, uyarilar
-
-
-def _sezgisel_tespit(varliklar: list[HamVarlik], ayarlar: Ayarlar) -> list[Eleman]:
-    """Katman bilgisi olmadan bicimden eleman cikarimi (PDF ve duzensiz DXF)."""
-    elemanlar: list[Eleman] = []
-    min_kenar = float(ayarlar.al("sezgisel.kolon_min_kenar", 0.20))
-    max_kenar = float(ayarlar.al("sezgisel.kolon_max_kenar", 2.00))
-    doseme_min = float(ayarlar.al("sezgisel.doseme_min_alan", 1.0))
-
-    poligonlar = _poligonlari_topla(varliklar, ayarlar)
-    for cevre, katman in poligonlar:
-        dik = min_donmus_dikdortgen(cevre)
-        if dik is None:
-            continue
-        a = alan(cevre)
-        if a >= doseme_min and dik.en > max_kenar:
-            e = _doseme_elemani(cevre, katman, ayarlar)
-            e.guven = 0.5
-            e.not_ekle("Sezgisel tespit: buyuk kapali alan doseme sayildi.")
-            elemanlar.append(e)
-        elif min_kenar <= dik.en <= max_kenar:
-            tip = _kolon_mu_perde_mi(cevre, ayarlar)
-            e = (
-                _kolon_elemani(cevre, katman, ayarlar)
-                if tip == ElemanTipi.KOLON
-                else _perde_elemani(cevre, katman, ayarlar)
-            )
-            e.guven = min(e.guven, 0.6)
-            e.not_ekle("Sezgisel tespit: kesit olculerinden siniflandirildi.")
-            elemanlar.append(e)
-    return elemanlar
 
 
 def _kirisleri_mesnetlerde_kir(elemanlar: list[Eleman], uyarilar: list[str]) -> None:

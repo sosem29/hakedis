@@ -203,6 +203,75 @@ def komut_katmanlar(args) -> int:
     return 0
 
 
+def komut_kesfet(args) -> int:
+    """Katman adlarina bakmadan, geometriden eleman tiplerini cikarir."""
+    from hakedis.otomatik import imzalari_cikar, yapilandirma_metni
+    from hakedis.readers import cizim_oku
+
+    ayarlar = _ayarlari_hazirla(args)
+    cizim = cizim_oku(args.dosya, ayarlar)
+    imzalar = imzalari_cikar(cizim, ayarlar)
+
+    print(f"Dosya : {args.dosya}")
+    print(f"Birim : {cizim.birim}")
+    x0, y0, x1, y1 = cizim.sinirlar()
+    print(f"Sinir : {x1 - x0:.2f} m x {y1 - y0:.2f} m")
+    print()
+    print(
+        f"{'KATMAN':<26}{'ADET':>6}  {'BULUNAN TIP':<12}{'GUVEN':>7}  GEREKCE"
+    )
+    print("-" * 100)
+    for i in imzalar:
+        tip = i.onerilen_tip or "-"
+        if i.onerilen_tip and i.guven >= 0.5:
+            isaret = "  " if i.guven >= 0.75 else "? "
+        else:
+            isaret = "! "
+            tip = "belirsiz"
+        print(
+            f"{isaret}{i.katman[:24]:<24}{i.varlik_sayisi:>6}  {tip:<12}"
+            f"{i.guven:>7.2f}  {i.gerekce}"
+        )
+    print("-" * 100)
+    print("  = guvenilir    ? = kontrol edin    ! = siniflandirilamadi")
+
+    if args.cikti:
+        hedef = Path(args.cikti)
+        if hedef.exists() and not args.ustune_yaz:
+            print(
+                f"\n{hedef} zaten var. Ustune yazmak icin --ustune-yaz kullanin.",
+                file=sys.stderr,
+            )
+            return 1
+        temel = VARSAYILAN_YOL.read_text(encoding="utf-8")
+        # Varsayilan 'katmanlar' bolumunu kesif sonucuyla degistir
+        satirlar = temel.splitlines(keepends=True)
+        cikti_satirlari: list[str] = []
+        atla = False
+        for satir in satirlar:
+            if satir.startswith("katmanlar:"):
+                atla = True
+                cikti_satirlari.append(yapilandirma_metni(imzalar))
+                continue
+            if atla:
+                # Girintisiz yeni bir ust bolum baslayinca atlamayi birak
+                if satir.strip() and not satir.startswith((" ", "#")):
+                    atla = False
+                else:
+                    continue
+            cikti_satirlari.append(satir)
+        hedef.parent.mkdir(parents=True, exist_ok=True)
+        hedef.write_text("".join(cikti_satirlari), encoding="utf-8")
+        print(f"\nYapilandirma yazildi: {hedef}")
+        print(f"Kullanmak icin      : hakedis metraj {args.dosya} --config {hedef}")
+    else:
+        print(
+            "\nBu eslemeyi kalici hale getirmek icin:\n"
+            f"  hakedis kesfet {args.dosya} --cikti ofis.yml"
+        )
+    return 0
+
+
 def komut_pdf_incele(args) -> int:
     """PDF paftasindaki renk/kalinlik dagilimini dokumler."""
     from hakedis.readers.pdf import MM_PER_PT, pdf_incele
@@ -377,6 +446,17 @@ Tipik kullanim:
     k = alt.add_parser("katmanlar", help="Cizimdeki katmanlari ve eslemeleri listele")
     _ortak_argumanlar(k)
     k.set_defaults(func=komut_katmanlar)
+
+    ke = alt.add_parser(
+        "kesfet",
+        help="Katman adlarina bakmadan, geometriden eleman tiplerini cikar",
+    )
+    _ortak_argumanlar(ke)
+    ke.add_argument(
+        "--cikti", "-o", help="Bulunan eslemeyi yapilandirma dosyasi olarak yaz"
+    )
+    ke.add_argument("--ustune-yaz", action="store_true", help="Varsa ustune yaz")
+    ke.set_defaults(func=komut_kesfet)
 
     pi = alt.add_parser("pdf-incele", help="PDF paftasindaki renkleri/olcegi incele")
     pi.add_argument("dosya", help="PDF dosyasi")

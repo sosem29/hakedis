@@ -236,6 +236,126 @@ class TestPdfYolu:
             plandan_metraj(str(bos), ayarlari_yukle())
 
 
+YABANCI_ADLAR = {
+    "KOLON": "A$C-DIKME-01",
+    "PERDE": "BA_WALL_X",
+    "KIRIS": "ZZ-BEAM-LAYER",
+    "DOSEME": "PLATE_OUTLINE",
+    "BOSLUK": "VOID_1",
+    "YAZI": "ANNO-TXT",
+    "AKS": "GRID_REF",
+}
+
+
+@pytest.fixture(scope="module")
+def yabanci_plan(plan, tmp_path_factory) -> Path:
+    """Ayni plani, hicbir desene uymayan katman adlariyla yeniden yazar."""
+    import ezdxf
+
+    doc = ezdxf.readfile(str(plan))
+    for kat in list(doc.layers):
+        if kat.dxf.name in YABANCI_ADLAR:
+            kat.dxf.name = YABANCI_ADLAR[kat.dxf.name]
+    for e in doc.modelspace():
+        if e.dxf.layer in YABANCI_ADLAR:
+            e.dxf.layer = YABANCI_ADLAR[e.dxf.layer]
+    yol = tmp_path_factory.mktemp("yabanci") / "yabanci.dxf"
+    doc.saveas(str(yol))
+    return yol
+
+
+class TestOtomatikKesif:
+    """Katman adlari taninmadiginda geometriden siniflandirma.
+
+    Katman adi her ofiste farklidir; sistem bunu kullaniciya sordurmadan
+    cizimin kendisinden cikarabilmelidir.
+    """
+
+    def test_tum_katmanlar_dogru_siniflanir(self, yabanci_plan):
+        from hakedis.otomatik import imzalari_cikar
+        from hakedis.readers import cizim_oku
+
+        ayarlar = ayarlari_yukle()
+        imzalar = imzalari_cikar(cizim_oku(str(yabanci_plan), ayarlar), ayarlar)
+        bulunan = {i.katman: i.onerilen_tip for i in imzalar}
+        assert bulunan == {
+            "A$C-DIKME-01": "kolon",
+            "BA_WALL_X": "perde",
+            "ZZ-BEAM-LAYER": "kiris",
+            "PLATE_OUTLINE": "doseme",
+            "VOID_1": "bosluk",
+            "ANNO-TXT": "metin",
+            "GRID_REF": "yoksay",
+        }
+
+    def test_l_perde_kalinliktan_taninir(self, yabanci_plan):
+        """L kesitte sinir dikdortgeninin kisa kenari kalinlik degildir."""
+        from hakedis.otomatik import imzalari_cikar
+        from hakedis.readers import cizim_oku
+
+        ayarlar = ayarlari_yukle()
+        imzalar = imzalari_cikar(cizim_oku(str(yabanci_plan), ayarlar), ayarlar)
+        perde = next(i for i in imzalar if i.katman == "BA_WALL_X")
+        assert perde.ortanca_en == pytest.approx(0.25, abs=1e-6)
+
+    def test_bosluk_kolondan_ayrilir(self, yabanci_plan):
+        """Cevresinde kiris ucu olmayan kapali alan kolon degil bosluktur."""
+        from hakedis.otomatik import imzalari_cikar
+        from hakedis.readers import cizim_oku
+
+        ayarlar = ayarlari_yukle()
+        imzalar = imzalari_cikar(cizim_oku(str(yabanci_plan), ayarlar), ayarlar)
+        assert next(i for i in imzalar if i.katman == "VOID_1").onerilen_tip == "bosluk"
+
+    def test_metraj_ayni_sonucu_verir(self, sonuc, yabanci_plan):
+        """Sifir yapilandirmayla, taninan katmanlarla ayni metraj cikmali."""
+        yabanci, _ = plandan_metraj(str(yabanci_plan), ayarlari_yukle())
+        for tip, degerler in sonuc.ozet().items():
+            for anahtar, beklenen in degerler.items():
+                assert yabanci.ozet()[tip][anahtar] == pytest.approx(
+                    beklenen, abs=1e-6
+                ), f"{tip}/{anahtar} tutmadi"
+
+    def test_otomatik_elemanlar_dusuk_guvenle_isaretlenir(self, yabanci_plan):
+        yabanci, _ = plandan_metraj(str(yabanci_plan), ayarlari_yukle())
+        assert all(e.guven < 0.7 for e in yabanci.elemanlar)
+        assert any("otomatik" in u for u in yabanci.uyarilar)
+
+    def test_yapilandirma_yazilabilir(self, yabanci_plan, tmp_path):
+        import yaml
+
+        from hakedis.otomatik import imzalari_cikar, yapilandirma_metni
+        from hakedis.readers import cizim_oku
+
+        ayarlar = ayarlari_yukle()
+        imzalar = imzalari_cikar(cizim_oku(str(yabanci_plan), ayarlar), ayarlar)
+        metin = yapilandirma_metni(imzalar)
+        veri = yaml.safe_load(metin)
+        assert set(veri["katmanlar"]) >= {"kolon", "perde", "kiris", "doseme"}
+
+        # Asil olcut: uretilen desenler gercekten o katmanlari yakalamali.
+        # Katman adlari regex olarak kacislanir ('A$C-...' -> 'A\$C\-...'),
+        # bu yuzden metne degil davranisa bakilir.
+        yeni = ayarlari_yukle()
+        yeni.ham["katmanlar"] = veri["katmanlar"]
+        assert yeni.katman_tipi("A$C-DIKME-01") == "kolon"
+        assert yeni.katman_tipi("BA_WALL_X") == "perde"
+        assert yeni.katman_tipi("ZZ-BEAM-LAYER") == "kiris"
+        # Benzer ama farkli bir ad yanlislikla eslesmemeli
+        assert yeni.katman_tipi("BA_WALL_XY") is None
+
+    def test_kesfet_cli_config_yazar(self, yabanci_plan, tmp_path):
+        from hakedis.cli import main
+
+        hedef = tmp_path / "ofis.yml"
+        assert main(["kesfet", str(yabanci_plan), "--cikti", str(hedef)]) == 0
+        assert hedef.exists()
+        # Yazilan config gercekten kullanilabilir olmali
+        s, _ = plandan_metraj(str(yabanci_plan), ayarlari_yukle(hedef))
+        assert len(s.tipe_gore(ElemanTipi.KOLON)) == 6
+        assert len(s.tipe_gore(ElemanTipi.PERDE)) == 1
+
+
 class TestHataYonetimi:
     def test_olmayan_dosya(self):
         with pytest.raises(FileNotFoundError):
