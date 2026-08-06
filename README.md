@@ -47,9 +47,13 @@ Kritik iki nokta doğru kurgulanmıştır:
 
 ```bash
 git clone <bu-depo> && cd hakedis
-pip install -e .
-hakedis dogrula          # bağımlılıkları kontrol et
+pip install -e .           # komut satırı arayüzü
+pip install -e ".[web]"    # gerekirse görsel arayüz (web + masaüstü)
+hakedis dogrula            # bağımlılıkları kontrol et
 ```
+
+Görsel arayüz için FastAPI/uvicorn/pywebview kurulur; bunlar yalnızca
+`hakedis web` ve `hakedis masaustu` komutlarında gerekir.
 
 DXF ve PDF için ek bir şey gerekmez. **DWG** okumak için bir dönüştürücü lazım:
 
@@ -89,7 +93,34 @@ hakedis toplu gir.dxf kat1.dxf kat2.dxf \
 hakedis toplu plan.pdf --paftalar "1:Giriş,2:1.Kat,3:2.Kat" --config ofis.yml
 ```
 
-Çıktılar:
+## Görsel arayüz (web + masaüstü)
+
+Sistemin iki yüzü aynı tek sayfa arayüzünü paylaşır; ikisi de yerel bir
+sunucu başlatır (`127.0.0.1`), çiziminiz makinenizden çıkmaz ve internet
+bağlantısı gerekmez:
+
+```bash
+hakedis web                 # varsayılan tarayıcıda açar
+hakedis masaustu            # yerli masaüstü penceresi (webview)
+```
+
+Arayüzün bölümleri:
+
+- **Metraj:** dosyayı sürükleyip bırakın; kat adı/yüksekliği, donatı,
+  döşeme tipi, merdiven eğimi seçin. Özet kartları, kırık ölçü cetveli,
+  **kontrol paftası** (SVG) ve uyarılar tek ekranda; Excel/JSON/SVG indirilir.
+- **Toplu metraj:** kat dosyalarını tek tek ekleyin; kat özeti tablosu ve
+  ortak cetvel.
+- **PDF incele:** paftadaki renk/kalınlık dökümü ve hazır `renk_esleme`
+  YAML şablonu.
+- **Ayarlar:** hızlı form veya gelişmiş YAML editörü — `config-yaz` ile
+  aynı yapılandırma, arayüzden yönetilir.
+
+Masaüstü penceresi için macOS'ta `pywebview` (WKWebView), Windows'ta
+WebView2, Linux'ta WebKitGTK kullanılır; `pywebview` kurulu değilse
+`hakedis masaustu` arayüzü otomatik olarak tarayıcıda açar.
+
+## Çıktılar
 
 - `plan.metraj.xlsx` — Özet / Metraj Cetveli / **Kırık Ölçü** / Elemanlar / Uyarılar
 - `plan.metraj.kontrol.svg` — **kontrol paftası**
@@ -219,7 +250,7 @@ Kontrol paftasını ve Uyarılar sayfasını okumadan hakedişe girmeyin.
 
 ```bash
 pip install -e ".[test]"
-pytest -q          # 94 test: geometri, etiket, uçtan uca DXF/PDF + yeni özellikler
+pytest -q          # 106 test: geometri, etiket, uçtan uca DXF/PDF, yeni özellikler + web API
 ```
 
 Uçtan uca testlerdeki beklenen değerler elle hesaplanmıştır, böylece metraj

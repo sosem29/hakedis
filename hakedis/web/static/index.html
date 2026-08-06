@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hakedis — Kırık Ölçü Metrajı</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232e7dd1'/%3E%3Cpath d='M8 22 20 10l2 2-12 12H8v-2zM22 12l-2-2 1.5-1.5a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2L22 12z' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="uygulama">
+  <aside class="kenar">
+    <div class="marka">
+      <div class="marka-logo">hd</div>
+      <div class="marka-metin">
+        <strong>hakedis</strong>
+        <span>kırık ölçü metrajı</span>
+      </div>
+    </div>
+    <nav class="menu">
+      <button class="menu-ogesi aktif" data-sekme="metraj">
+        <span class="ikon">📐</span> Metraj
+      </button>
+      <button class="menu-ogesi" data-sekme="toplu">
+        <span class="ikon">🗂️</span> Toplu Metraj
+      </button>
+      <button class="menu-ogesi" data-sekme="pdf">
+        <span class="ikon">🔍</span> PDF İncele
+      </button>
+      <button class="menu-ogesi" data-sekme="ayarlar">
+        <span class="ikon">⚙️</span> Ayarlar
+      </button>
+    </nav>
+    <div class="kenar-alt">
+      <span id="surum-alani">v0.1.0</span>
+      <span id="durum-alani" class="durum-kur"></span>
+    </div>
+  </aside>
+
+  <main class="icerik">
+    <!-- ============================ METRAJ ============================ -->
+    <section id="sekme-metraj" class="sekme aktif">
+      <header class="sayfa-baslik">
+        <h1>Metraj</h1>
+        <p>Kalıp planını (.dwg / .dxf / .pdf) yükleyin, ayarlarınızı seçin ve kırık ölçü metrajını çıkarın.</p>
+      </header>
+      <div class="cift-sutun">
+        <div class="panel giris">
+          <div class="panel-baslik">Plan Dosyası</div>
+          <div id="metraj-birak" class="birak-alani">
+            <input type="file" id="metraj-dosya" accept=".dwg,.dxf,.pdf" hidden>
+            <div class="birak-ikon">⬆</div>
+            <p class="birak-metin"><strong>Dosyayı sürükleyip bırakın</strong> veya tıklayıp seçin</p>
+            <p class="birak-alt">Desteklenen: .dwg, .dxf, .pdf</p>
+          </div>
+
+          <div class="panel-baslik">Kat</div>
+          <div class="form-satir">
+            <label class="alan">Kat adı
+              <input type="text" id="metraj-kat-adi" placeholder="3. Normal Kat">
+            </label>
+          </div>
+          <div class="form-satir">
+            <label class="alan">Kat yüksekliği (m)
+              <input type="number" id="metraj-kat-yuk" step="0.05" value="3.00">
+            </label>
+            <label class="alan">Döşeme kalınlığı (m)
+              <input type="number" id="metraj-doseme-kal" step="0.01" value="0.15">
+            </label>
+          </div>
+
+          <div class="panel-baslik">Hızlı Seçenekler</div>
+          <div id="metraj-hizli-form" class="hizli-form"></div>
+
+          <div class="panel-baslik">PDF (yalnızca .pdf dosyası)</div>
+          <div class="form-satir">
+            <label class="alan">Ölçek
+              <input type="text" id="metraj-olcek" placeholder="1/50">
+            </label>
+            <label class="alan">Sayfa
+              <input type="number" id="metraj-sayfa" value="1" min="1">
+            </label>
+          </div>
+          <div class="form-satir">
+            <label class="alan alan-tam">Kalibrasyon (PDF mesafe:gerçek)
+              <input type="text" id="metraj-kalibre" placeholder="340.5:6.00">
+            </label>
+          </div>
+
+          <button id="metraj-hesapla" class="birincil">Hesapla &amp; Metraji Üret</button>
+        </div>
+
+        <div class="panel sonuc">
+          <div id="metraj-yukleniyor" class="yukleniyor" hidden>
+            <div class="spinner"></div> Metraj hesaplanıyor…
+          </div>
+          <div id="metraj-hata" class="hata-kutusu" hidden></div>
+          <div id="metraj-sonuc" class="sonuc-alani" hidden></div>
+          <div id="metraj-bos" class="bos-alani">
+            <div class="bos-ikon">📊</div>
+            <p>Sonuçlar burada görünecek.</p>
+            <p class="bos-alt">Metraj, kırık ölçü cetveli ve kontrol paftası.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ TOPLU ============================= -->
+    <section id="sekme-toplu" class="sekme">
+      <header class="sayfa-baslik">
+        <h1>Toplu Metraj</h1>
+        <p>Birden çok katı veya çok sayfalı bir PDF'i tek seferde metrajlayın; ortak Excel ve kat özeti üretin.</p>
+      </header>
+      <div class="cift-sutun">
+        <div class="panel giris">
+          <div class="panel-baslik">Kat Dosyaları</div>
+          <div id="toplu-dosyalar" class="toplu-liste"></div>
+          <button id="toplu-ekle" class="ikincil">+ Dosya Ekle</button>
+
+          <div class="panel-baslik">Ortak Ayarlar</div>
+          <div class="form-satir">
+            <label class="alan">Kat yüksekliği (m)
+              <input type="number" id="toplu-kat-yuk" step="0.05" value="3.00">
+            </label>
+            <label class="alan">Döşeme kalınlığı (m)
+              <input type="number" id="toplu-doseme-kal" step="0.01" value="0.15">
+            </label>
+          </div>
+          <div id="toplu-hizli-form" class="hizli-form"></div>
+          <div class="panel-baslik">PDF (çok sayfalı tek dosya)</div>
+          <div class="form-satir">
+            <label class="alan">Ölçek
+              <input type="text" id="toplu-olcek" placeholder="1/50">
+            </label>
+            <label class="alan">Kalibrasyon (PDF:gerçek)
+              <input type="text" id="toplu-kalibre" placeholder="340.5:6.00">
+            </label>
+          </div>
+
+          <button id="toplu-hesapla" class="birincil">Toplu Hesapla</button>
+        </div>
+
+        <div class="panel sonuc">
+          <div id="toplu-yukleniyor" class="yukleniyor" hidden>
+            <div class="spinner"></div> Toplu metraj hesaplanıyor…
+          </div>
+          <div id="toplu-hata" class="hata-kutusu" hidden></div>
+          <div id="toplu-sonuc" class="sonuc-alani" hidden></div>
+          <div id="toplu-bos" class="bos-alani">
+            <div class="bos-ikon">🗂️</div>
+            <p>Kat dosyalarınızı ekleyin.</p>
+            <p class="bos-alt">Her dosya bir kat olarak işlenir.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================== PDF İNCELE ========================= -->
+    <section id="sekme-pdf" class="sekme">
+      <header class="sayfa-baslik">
+        <h1>PDF İncele</h1>
+        <p>Paftadaki renkleri ve sayfa boyutunu görün; katman eşlemesi yoksa renk eşlemesini bununla kurun.</p>
+      </header>
+      <div class="cift-sutun">
+        <div class="panel giris">
+          <div id="pdf-birak" class="birak-alani">
+            <input type="file" id="pdf-dosya" accept=".pdf" hidden>
+            <div class="birak-ikon">🔍</div>
+            <p class="birak-metin"><strong>PDF sürükleyip bırakın</strong> veya tıklayıp seçin</p>
+            <p class="birak-alt">Yalnızca vektörel PDF'ler okunabilir</p>
+          </div>
+          <div class="form-satir">
+            <label class="alan">Sayfa
+              <input type="number" id="pdf-sayfa" value="1" min="1">
+            </label>
+          </div>
+          <button id="pdf-incele" class="birincil">İncele</button>
+        </div>
+        <div class="panel sonuc">
+          <div id="pdf-yukleniyor" class="yukleniyor" hidden><div class="spinner"></div> İnceleniyor…</div>
+          <div id="pdf-hata" class="hata-kutusu" hidden></div>
+          <div id="pdf-sonuc" class="sonuc-alani" hidden></div>
+          <div id="pdf-bos" class="bos-alani">
+            <div class="bos-ikon">🔍</div>
+            <p>Renk / kalınlık dökümü burada görünecek.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================== AYARLAR ============================ -->
+    <section id="sekme-ayarlar" class="sekme">
+      <header class="sayfa-baslik">
+        <h1>Ayarlar</h1>
+        <p>Ofis yapılandırmanız: katman adları, pozlar, döşeme/merdiven/donatı kuralları.</p>
+      </header>
+      <div class="panel">
+        <div class="ayarlar-arac">
+          <div class="ayarlar-arac-sol">
+            <button id="ayar-varsayilan" class="ikincil">Varsayılanları Yükle</button>
+            <label class="ikincil dosya-buton">YAML Yükle
+              <input type="file" id="ayar-yaml-dosya" accept=".yml,.yaml" hidden>
+            </label>
+            <button id="ayar-indir" class="ikincil">YAML İndir</button>
+          </div>
+          <div class="ayarlar-arac-sag">
+            <span class="gosterge">Gelişmiş (YAML)</span>
+            <label class="anahtar">
+              <input type="checkbox" id="ayar-gelismis">
+              <span class="kaydirici"></span>
+            </label>
+          </div>
+        </div>
+        <div id="ayar-form" class="ayar-form"></div>
+        <div id="ayar-yaml-alani" class="ayar-yaml-alani" hidden>
+          <textarea id="ayar-yaml-metin" spellcheck="false" rows="22"></textarea>
+          <div class="ayar-yaml-butonlar">
+            <button id="ayar-yaml-formdan" class="ikincil">Formdan YAML Üret</button>
+            <button id="ayar-yaml-forma" class="ikincil">YAML'ı Forma Uygula</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="bildirim" class="bildirim" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -162,6 +162,19 @@ def ayarlari_yukle(yol: str | Path | None = None) -> Ayarlar:
     return Ayarlar(_derin_birlestir(temel.ham, kullanici))
 
 
+def ayarlari_yaml_metinden(metin: str) -> Ayarlar:
+    """YAML metnini varsayilanlarin ustune bindirir (web arayuzu icin)."""
+    temel = varsayilan_ayarlar()
+    kullanici = yaml.safe_load(metin or "") or {}
+    return Ayarlar(_derin_birlestir(temel.ham, kullanici))
+
+
+def ayarlari_json_ile(veri: dict | None) -> Ayarlar:
+    """JSON sozlugunu varsayilanlarin ustune bindirir (web arayuzu icin)."""
+    temel = varsayilan_ayarlar()
+    return Ayarlar(_derin_birlestir(temel.ham, veri or {}))
+
+
 def olcegi_coz(deger: Any) -> float:
     """'1/50', '1:50', 50 -> 50.0 seklinde olcek paydasi dondurur."""
     if deger is None:

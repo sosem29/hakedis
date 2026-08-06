@@ -153,9 +153,22 @@ def _etiket(d: _Donusum, e: Eleman, yerlesim: list[tuple[float, float]]) -> str:
     )
 
 
+def svg_metni(sonuc: MetrajSonucu) -> str:
+    """Tespit sonuclarini gosteren SVG kontrol paftasini metin olarak uretir."""
+    return _svg_olustur(sonuc)
+
+
 def svg_yaz(sonuc: MetrajSonucu, hedef: str | Path) -> Path:
     """Tespit sonuclarini gosteren SVG kontrol paftasi yazar."""
     hedef = Path(hedef)
+    svg = _svg_olustur(sonuc)
+    hedef.parent.mkdir(parents=True, exist_ok=True)
+    hedef.write_text(svg, encoding="utf-8")
+    return hedef
+
+
+def _svg_olustur(sonuc: MetrajSonucu) -> str:
+    """Tespit sonuclarini gosteren SVG kontrol paftasi metnini kurar."""
     tum_noktalar: list[Nokta] = []
     for e in sonuc.elemanlar:
         tum_noktalar.extend(e.cevre)
@@ -248,10 +261,8 @@ height="{svg_y + aciklama_y:.0f}" viewBox="0 0 {svg_g:.0f} {svg_y + aciklama_y:.
   .uyari {{ font-size: 11px; fill: #c0392b; }}
 </style>
 <rect width="100%" height="100%" fill="#ffffff" />
-{chr(10).join(govde)}
+  {chr(10).join(govde)}
 {chr(10).join(aciklama)}
 </svg>
 """
-    hedef.parent.mkdir(parents=True, exist_ok=True)
-    hedef.write_text(svg, encoding="utf-8")
-    return hedef
+    return svg

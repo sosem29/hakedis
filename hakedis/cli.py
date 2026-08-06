@@ -6,6 +6,7 @@ import argparse
 import json
 import shutil
 import sys
+import time
 from pathlib import Path
 
 from hakedis import __version__
@@ -108,56 +109,9 @@ def komut_metraj(args) -> int:
 
 
 def _json_yaz(sonuc, hedef: Path) -> None:
-    veri = {
-        "kat": sonuc.kat,
-        "kaynak_dosya": sonuc.kaynak_dosya,
-        "parametreler": sonuc.parametreler,
-        "ozet": sonuc.ozet(),
-        "uyarilar": sonuc.uyarilar,
-        "elemanlar": [
-            {
-                "ad": e.ad,
-                "tip": e.tip.value,
-                "kat": e.kat,
-                "katman": e.kaynak_katman,
-                "etiket": e.etiket_metni,
-                "olculer": e.olculer,
-                "guven": e.guven,
-                "notlar": e.notlar,
-                "kirik_olcu": [
-                    {
-                        "baslangic": [s.baslangic.x, s.baslangic.y],
-                        "bitis": [s.bitis.x, s.bitis.y],
-                        "uzunluk": round(s.uzunluk, 4),
-                        "aciklama": s.aciklama,
-                    }
-                    for s in e.segmentler
-                ],
-                "cevre": [[p.x, p.y] for p in e.cevre],
-                "bosluklar": [[[p.x, p.y] for p in b] for b in e.bosluklar],
-            }
-            for e in sonuc.elemanlar
-        ],
-        "satirlar": [
-            {
-                "poz": s.poz,
-                "eleman": s.eleman_adi,
-                "tip": s.tip.value,
-                "tanim": s.tanim,
-                "en": s.en,
-                "boy": s.boy,
-                "yukseklik": s.yukseklik,
-                "alan": s.alan,
-                "hacim": s.hacim,
-                "demir": s.kg,
-                "birim": s.birim,
-                "formul": s.formul,
-                "dusum": s.dusum_mu,
-                "detay": s.detay,
-            }
-            for s in sonuc.satirlar
-        ],
-    }
+    from hakedis.report.veri import sonuc_verisi
+
+    veri = sonuc_verisi(sonuc)
     hedef.parent.mkdir(parents=True, exist_ok=True)
     hedef.write_text(
         json.dumps(veri, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -316,6 +270,28 @@ def komut_dogrula(args) -> int:
     return 0 if tamam else 1
 
 
+def komut_web(args) -> int:
+    """Gorsel arayuzu varsayilan tarayicida acar (yerel sunucu)."""
+    from hakedis.web.desktop import tarayicida_ac
+
+    url = tarayicida_ac(port=args.port, host=args.host)
+    print(f"hakedis web arayuzu: {url}")
+    print("Kapatmak icin Ctrl+C.")
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:  # pragma: no cover
+        pass
+    return 0
+
+
+def komut_masaustu(args) -> int:
+    """Gorsel arayuzu yerli masaustu penceresinde acar (webview)."""
+    from hakedis.web.desktop import masaustu_ac
+
+    return masaustu_ac(port=args.port, host=args.host, debug=args.debug)
+
+
 # ---------------------------------------------------------------------------
 # Ana giris
 # ---------------------------------------------------------------------------
@@ -426,6 +402,10 @@ Tipik kullanim:
   hakedis pdf-incele plan.pdf              # PDF renklerini gor
   hakedis metraj plan.pdf --olcek 1/50 --kalibre 340.5:6.00
 
+Gorsel arayuz:
+  hakedis web                              # tarayicida acar
+  hakedis masaustu                         # yerli masaustu penceresi
+
 Cok katli / cok paftali:
   hakedis toplu gir.dxf kat1.dxf --kat-adlari "Giris" "1. Kat"
   hakedis toplu plan.pdf --paftalar "1:Giris,2:1.Kat,3:2.Kat"
@@ -533,6 +513,22 @@ Cok katli / cok paftali:
 
     d = alt.add_parser("dogrula", help="Kurulumu ve bagimliliklari kontrol et")
     d.set_defaults(func=komut_dogrula)
+
+    w = alt.add_parser(
+        "web", help="Gorsel arayuzu varsayilan tarayicida acar"
+    )
+    w.add_argument("--host", default="127.0.0.1", help="Baglanma adresi")
+    w.add_argument("--port", type=int, default=0, help="Sunucu portu (0 = otomatik)")
+    w.set_defaults(func=komut_web)
+
+    m = alt.add_parser(
+        "masaustu",
+        help="Gorsel arayuzu yerli masaustu penceresinde acar (webview)",
+    )
+    m.add_argument("--host", default="127.0.0.1", help="Baglanma adresi")
+    m.add_argument("--port", type=int, default=0, help="Sunucu portu (0 = otomatik)")
+    m.add_argument("--debug", action="store_true", help="Gelistirici araclarini ac")
+    m.set_defaults(func=komut_masaustu)
 
     return p
 
