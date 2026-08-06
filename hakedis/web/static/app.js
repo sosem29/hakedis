@@ -89,9 +89,10 @@ function dosyaAdiTemiz(ad) {
 
 const TIP_RENKLER = {
   Kolon: "#e74c3c", Perde: "#8e44ad", Kiris: "#2980b9",
-  Doseme: "#7f8c8d", Merdiven: "#f39c12", Bosluk: "#95a5a6", Bilinmeyen: "#bdc3c7",
+  Doseme: "#7f8c8d", Merdiven: "#f39c12", Bosluk: "#95a5a6",
+  Kapi: "#16a085", Pencere: "#1abc9c", Bilinmeyen: "#bdc3c7",
 };
-const TIP_SIRA = ["Kolon", "Perde", "Kiris", "Doseme", "Merdiven", "Bosluk", "Bilinmeyen"];
+const TIP_SIRA = ["Kolon", "Perde", "Kiris", "Doseme", "Merdiven", "Bosluk", "Kapi", "Pencere", "Bilinmeyen"];
 
 const ALANLAR = [
   { yol: "birim", etiket: "Birim", tip: "select", secenekler: ["cm", "mm", "m"], panel: "hizli", bolum: "Genel" },
@@ -111,13 +112,22 @@ const ALANLAR = [
 });
 
 ["kolon_beton", "kolon_kalip", "perde_beton", "perde_kalip", "kiris_beton", "kiris_kalip",
- "doseme_beton", "doseme_kalip", "merdiven_beton", "merdiven_kalip", "demir"].forEach((p) => {
+ "doseme_beton", "doseme_kalip", "merdiven_beton", "merdiven_kalip", "demir",
+ "kapi", "pencere", "siva", "siva_tavan", "kaplama"].forEach((p) => {
   ALANLAR.push({ yol: `pozlar.${p}`, etiket: `Poz — ${p.replace(/_/g, " ")}`, tip: "metin", panel: "tam", bolum: "Pozlar" });
 });
 
-["kolon", "perde", "kiris", "doseme", "merdiven", "bosluk", "metin", "yoksay"].forEach((k) => {
+["kolon", "perde", "kiris", "doseme", "merdiven", "bosluk", "kapi", "pencere", "metin", "yoksay"].forEach((k) => {
   ALANLAR.push({ yol: `katmanlar.${k}`, etiket: `Katman — ${k} (regex, virgülle)`, tip: "liste", panel: "tam", bolum: "Katmanlar" });
 });
+
+[
+  { yol: "siva.aktif", etiket: "Sıva / badana (m²) — YAKLAŞIK", tip: "onay", panel: "tam", bolum: "Sıva/Kaplama" },
+  { yol: "siva.yuzey_dusumu", etiket: "Sıva yüzey düşümü", tip: "number", adim: 0.05, panel: "tam", bolum: "Sıva/Kaplama" },
+  { yol: "kaplama.aktif", etiket: "Döşeme kaplama + tesviye (m²) — YAKLAŞIK", tip: "onay", panel: "tam", bolum: "Sıva/Kaplama" },
+  { yol: "kapi.aktif", etiket: "Kapı doğrulama listesi (adet)", tip: "onay", panel: "tam", bolum: "Doğrulama" },
+  { yol: "pencere.aktif", etiket: "Pencere doğrulama listesi (adet)", tip: "onay", panel: "tam", bolum: "Doğrulama" },
+].forEach((a) => ALANLAR.push(a));
 
 /* ---------------- Durum ---------------- */
 
@@ -436,6 +446,25 @@ function maliyetOzetHtml(m) {
   ${eksik}`;
 }
 
+function katMaliyetiHtml(km) {
+  if (!km || !km.length) return "";
+  const rows = km.map((k) => `<tr>
+    <td class="sol"><b>${esc(k.kat)}</b></td>
+    <td class="vurgulu">${sayiFormat(k.ara_toplam, 2)}</td>
+    <td>${sayiFormat(k.kdv, 2)}</td>
+    <td class="vurgulu"><b>${sayiFormat(k.genel_toplam, 2)}</b></td>
+    <td class="sol">${(k.fiyatsiz_pozlar || []).length
+      ? `<span style="color:#b03a2e">${k.fiyatsiz_pozlar.length} fiyatsız poz</span>`
+      : ""}</td>
+  </tr>`).join("");
+  return `<div class="bolum-baslik">💰 Kat Bazında Yaklaşık Maliyet</div>
+  <div class="tablo-kapsayici"><table class="metraj">
+    <thead><tr>
+      <th class="sol">Kat</th><th>Ara Toplam</th><th>KDV</th><th>Genel Toplam</th><th>Not</th>
+    </tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
 function metrajSonucuGoster(sonuc, ad, kapsayici) {
   const alan = kapsayici || $("#metraj-sonuc");
   const ozet = ozetKartlariHtml(sonuc.ozet);
@@ -601,6 +630,7 @@ function topluSonucuGoster(veri) {
   const kartlar = ozetKartlariHtml(veri.toplam);
   const uyari = uyarilarHtml(veri.uyarilar);
   const cetvel = cetvelTablosu(veri.satirlar, true);
+  const katMaliyet = katMaliyetiHtml(veri.kat_maliyetleri);
 
   alan.innerHTML = `
     <div class="sonuc-ust">
@@ -615,6 +645,7 @@ function topluSonucuGoster(veri) {
     </div>
     ${katOzet}
     <div class="ozet-grid">${kartlar}</div>
+    ${katMaliyet}
     ${uyari}
     ${cetvel}
     ${maliyetOzetHtml(veri.maliyet)}`;
@@ -839,6 +870,8 @@ async function esleMetrajHesapla(dosya) {
   alan.innerHTML = `<div class="yukleniyor" style="padding:24px"><div class="spinner"></div> Metraj hesaplanıyor…</div>`;
   try {
     const veri = await api("/api/metraj", { method: "POST", body: esleFormData(dosya) });
+    DURUM.sonSatirlar = veri.satirlar;
+    DURUM.sonKaynak = dosya.name;
     metrajSonucuGoster(veri, dosya.name, alan);
     bildirim("Eslemeler uygulandı, metraj hazır.");
   } catch (e) {
@@ -947,6 +980,10 @@ function maliyetFormuYenile() {
       <label class="alan">KDV (%)
         <input type="number" id="maliyet-kdv" step="1" min="0" value="${esc(m.kdv_oran ?? 20)}">
       </label>
+      <label class="alan">Birim fiyat dosyası (yml)
+        <input type="text" id="maliyet-fiyatlar" value="${esc(m.fiyatlar_yolu || "")}"
+          placeholder="birim_fiyatlar.yml">
+      </label>
     </div>
     <div class="bolum-baslik">💰 Poz Birim Fiyatları (TL)</div>
     <div class="tablo-kapsayici">
@@ -961,11 +998,14 @@ function maliyetFormuYenile() {
       <button id="maliyet-hesapla" class="birincil">Hesapla &amp; Göster</button>
     </div>
     <p class="maliyet-not">Fiyatlar ORNEKTIR; güncel bakanlık birim fiyatlarını girin.
-      "Aktif" açıkken metraj/toplu sonucuna ve Excel'e yaklaşık maliyet eklenir.</p>`;
+      "Aktif" açıkken metraj/toplu sonucuna ve Excel'e yaklaşık maliyet eklenir.
+      "Birim fiyat dosyası" sunucudan erişilebilen bir yml yoludur
+      (ör. <code>birim_fiyatlar.yml</code>); buradaki fiyatlar o dosyayı ezer.</p>`;
 
   const aktif = $("#maliyet-aktif");
   aktif.addEventListener("change", () => { m.aktif = aktif.checked; });
   $("#maliyet-birim").addEventListener("input", () => { m.para_birimi = $("#maliyet-birim").value; });
+  $("#maliyet-fiyatlar").addEventListener("input", () => { m.fiyatlar_yolu = $("#maliyet-fiyatlar").value; });
   $("#maliyet-kdv").addEventListener("input", () => {
     const n = parseFloat($("#maliyet-kdv").value);
     if (Number.isFinite(n)) m.kdv_oran = n;

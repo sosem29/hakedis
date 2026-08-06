@@ -1,0 +1,37 @@
+# hakedis yil bazli birim fiyat veritabani (ORNEKTIR)
+#
+# Bu dosyayi guncel bakanlik (Cevre, Sehircilik ve Iklim Degisikligi) veya
+# il birim fiyatlarinizla doldurun ve `maliyet.fiyatlar_yolu` bolumunde
+# isaret edin. Yapilandirmadaki `maliyet.poz_fiyatlari` degerleri bu
+# tablonun ustune biner (yani kullanici ayari onceliklidir).
+#
+# Ornek aktivasyon (varsayilan.yml):
+#   maliyet:
+#     fiyatlar_yolu: birim_fiyatlar.yml
+#
+# Burada fiyati olmayan pozlar "fiyatsiz pozlar" listesinde raporlanir.
+
+# --- Betonarme ---------------------------------------------------------------
+"16.058/1-K": 4200      # Betonarme kolon (m3)
+"16.058/1-P": 4200      # Betonarme perde (m3)
+"16.058/1-Kr": 4300     # Betonarme kiris (m3)
+"16.058/1-D": 4300      # Betonarme doseme (m3)
+"16.058/1-M": 4600      # Betonarme merdiven (m3)
+"21.011/K": 480         # Kolon kalibi (m2)
+"21.011/P": 480         # Perde kalibi (m2)
+"21.011/Kr": 500        # Kiris kalibi (m2)
+"21.011/D": 500         # Doseme kalibi (m2)
+"21.011/M": 560         # Merdiven kalibi (m2)
+"18.001": 55            # Donati isciligi (kg)
+
+# --- Siva / Badana ------------------------------------------------------------
+"21.061": 250           # Ic siva (m2)
+"21.071": 210           # Tavan siva + badana (m2)
+
+# --- Dograma ------------------------------------------------------------------
+"22.201": 3000          # Ic kapi (adet)
+"22.211": 2200          # Pencere dogramasi (adet)
+
+# --- Doseme kaplama ------------------------------------------------------------
+"23.062/S": 320         # Seramik doseme kaplama (m2)
+"23.062/T": 90          # Tesviye / suphe tabakasi (m2)

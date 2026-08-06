@@ -40,6 +40,7 @@ class Etiket:
     t: float | None = None  # kalinlik (m)
     tip_ipucu: ElemanTipi | None = None
     kullanildi: bool = False
+    dogrulama: bool = False  # kapi/pencere bosluk (dograma) etiketi
 
     @property
     def bilgi_var(self) -> bool:
@@ -117,6 +118,16 @@ def etiket_ayristir(metin: str, ayarlar: Ayarlar) -> Etiket:
                 et.ad = m.group("ad").replace(" ", "").replace("_", "").upper()
                 break
 
+    # Kapi/pencere (dograma boslugu) etiketi: "KD101", "P12", "90x220"
+    for desen in ayarlar.al("etiket.desenler.dogrular", []) or []:
+        m = re.search(desen, temiz)
+        if m:
+            et.dogrulama = True
+            gd = m.groupdict()
+            if gd.get("ad") and not et.ad:
+                et.ad = gd["ad"].replace(" ", "").upper()
+            break
+
     # Kesitte b > h ise ters yazilmis olabilir; kirislerde h >= b beklenir
     et.tip_ipucu = _tip_ipucu(et.ad)
     return et
@@ -137,6 +148,10 @@ def etiketleri_topla(varliklar: list[HamVarlik], ayarlar: Ayarlar) -> list[Etike
 
 def _tip_uyumlu(et: Etiket, tip: ElemanTipi) -> bool:
     """Etiketin on eki elemanin tipiyle celisiyor mu?"""
+    if et.dogrulama:
+        return tip in (ElemanTipi.KAPI, ElemanTipi.PENCERE)
+    if tip in (ElemanTipi.KAPI, ElemanTipi.PENCERE):
+        return False
     if et.tip_ipucu is None:
         return True
     if et.tip_ipucu == tip:

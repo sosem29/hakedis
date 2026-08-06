@@ -145,7 +145,15 @@ def _sayfa_cetvel(wb: Workbook, sonuc: MetrajSonucu) -> None:
         ElemanTipi.KIRIS,
         ElemanTipi.DOSEME,
         ElemanTipi.MERDIVEN,
+        ElemanTipi.KAPI,
+        ElemanTipi.PENCERE,
+        ElemanTipi.BILINMEYEN,
     ]
+    grup_baslik = {
+        ElemanTipi.KAPI: "KAPI-PENCERE METRAJI (DOGRAMA LISTESI)",
+        ElemanTipi.PENCERE: "KAPI-PENCERE METRAJI (DOGRAMA LISTESI)",
+        ElemanTipi.BILINMEYEN: "SIVA / KAPLAMA (BETONARME YUZEYLERI)",
+    }
     # Kat gruplari: cok katli birlesik sonucta kat, sonra tip sirasiyla goster
     kats = list(dict.fromkeys(s.kat for s in sonuc.satirlar if s.kat)) or [""]
     for kat in kats:
@@ -161,7 +169,11 @@ def _sayfa_cetvel(wb: Workbook, sonuc: MetrajSonucu) -> None:
             satirlar = [s for s in kat_satirlari if s.tip == tip]
             if not satirlar:
                 continue
-            h = ws.cell(row=satir, column=1, value=f"{tip.value.upper()} METRAJI")
+            h = ws.cell(
+                row=satir,
+                column=1,
+                value=grup_baslik.get(tip, f"{tip.value.upper()} METRAJI"),
+            )
             h.font = Font(bold=True, size=11)
             h.fill = GRUP_DOLGU
             for i in range(1, len(SUTUNLAR) + 1):
@@ -318,8 +330,7 @@ def _sayfa_maliyet(
     """Maliyet tablosunu ayri bir Excel sayfasi olarak yazar."""
     ws = wb.create_sheet("Maliyet")
     genislikler = {
-        "A": 16, "B": 14, "C": 10, "D": 34,
-        "E": 12, "F": 12, "G": 16,
+        "A": 6, "B": 14, "C": 44, "D": 8, "E": 12, "F": 12, "G": 16,
     }
     for harf, g in genislikler.items():
         ws.column_dimensions[harf].width = g
@@ -333,12 +344,13 @@ def _sayfa_maliyet(
         )
         return
 
-    ws["A1"] = f"YAKLASIK MALIYET ({m['para_birimi']})"
+    ws["A1"] = f"YAKLASIK MALIYET ({m['para_birimi']}) - YIGS FORMATI"
     ws["A1"].font = Font(bold=True, size=14)
     satir = 3
     basliklar = [
-        ("Poz", "A"), ("Tanim", "B"), ("Birim", "C"), ("Eleman", "D"),
-        ("Miktar", "E"), ("Birim Fiyat", "F"), ("Tutar", "G"),
+        ("Sira No", "A"), ("Poz No", "B"), ("Poz Tanimi", "C"),
+        ("Birim", "D"), ("Miktar", "E"), ("Birim Fiyat", "F"),
+        ("Tutar", "G"),
     ]
     for i, (ad, _harf) in enumerate(basliklar, start=1):
         h = ws.cell(row=satir, column=i, value=ad)
@@ -347,12 +359,34 @@ def _sayfa_maliyet(
         h.border = CERCEVE
     satir += 1
 
+    son_bolum = None
+    bolum_toplam: dict[str, float] = {}
     for k in m["kalemler"]:
+        if k["bolum"] != son_bolum:
+            if son_bolum is not None:
+                satir += 1
+                ws.cell(
+                    row=satir, column=2, value=f"{son_bolum} ARA TOPLAM"
+                ).font = TOPLAM_YAZI
+                ws.cell(
+                    row=satir, column=7, value=round(bolum_toplam.get(son_bolum, 0.0), 2)
+                ).font = TOPLAM_YAZI
+                ws.cell(row=satir, column=7).number_format = "0.00"
+                for c in range(1, 8):
+                    ws.cell(row=satir, column=c).fill = GRUP_DOLGU
+            satir += 1
+            son_bolum = k["bolum"]
+            bolum_toplam.setdefault(son_bolum, 0.0)
+            ws.cell(row=satir, column=1, value=son_bolum).font = Font(bold=True, size=11)
+            ws.cell(row=satir, column=1).fill = GRUP_DOLGU
+            for c in range(1, 8):
+                ws.cell(row=satir, column=c).fill = GRUP_DOLGU
+        bolum_toplam[son_bolum] = bolum_toplam.get(son_bolum, 0.0) + k["tutar"]
         degerler = [
+            k["sira"],
             k["poz"],
             k["tanim"],
             k["birim"],
-            k["eleman"],
             k["miktar"],
             k["fiyat"],
             k["tutar"],
@@ -367,26 +401,27 @@ def _sayfa_maliyet(
                 ws.cell(row=satir, column=i).fill = DUSUM_DOLGU
         satir += 1
 
+    if son_bolum is not None:
+        satir += 1
+        ws.cell(row=satir, column=2, value=f"{son_bolum} ARA TOPLAM").font = TOPLAM_YAZI
+        ws.cell(
+            row=satir, column=7, value=round(bolum_toplam.get(son_bolum, 0.0), 2)
+        ).font = TOPLAM_YAZI
+        ws.cell(row=satir, column=7).number_format = "0.00"
+        for c in range(1, 8):
+            ws.cell(row=satir, column=c).fill = GRUP_DOLGU
+
     satir += 1
-    for i, (ad, deger) in enumerate(
-        [
-            ("ARA TOPLAM", m["ara_toplam"]),
-            (f"KDV (%{m['kdv_oran']:g})", m["kdv"]),
-            ("GENEL TOPLAM", m["genel_toplam"]),
-        ],
-        start=1,
-    ):
-        if i == 1:
-            ws.cell(row=satir, column=1, value=ad).font = TOPLAM_YAZI
-            ws.cell(row=satir, column=2, value=f"{deger:,.2f}").font = TOPLAM_YAZI
-        elif i == 2:
-            ws.cell(row=satir, column=1, value=ad).font = TOPLAM_YAZI
-            ws.cell(row=satir, column=2, value=f"{deger:,.2f}").font = TOPLAM_YAZI
-        else:
-            ws.cell(row=satir, column=1, value=ad).font = Font(bold=True, size=12)
-            ws.cell(row=satir, column=2, value=f"{deger:,.2f}").font = Font(
-                bold=True, size=12
-            )
+    for ad, deger in [
+        ("ARA TOPLAM", m["ara_toplam"]),
+        (f"KDV (%{m['kdv_oran']:g})", m["kdv"]),
+        ("GENEL TOPLAM", m["genel_toplam"]),
+    ]:
+        ws.cell(row=satir, column=2, value=ad).font = TOPLAM_YAZI
+        ws.cell(row=satir, column=7, value=round(deger, 2)).font = TOPLAM_YAZI
+        ws.cell(row=satir, column=7).number_format = "0.00"
+        for c in range(1, 8):
+            ws.cell(row=satir, column=c).border = CERCEVE
         satir += 1
 
     if m["fiyatsiz_pozlar"]:
@@ -515,13 +550,73 @@ def _sayfa_kat_ozeti(wb: Workbook, sonuc: MetrajSonucu) -> None:
             h.number_format = "0.0"
 
 
-def excel_yaz_toplu(sonuclar: list[MetrajSonucu], hedef: str | Path) -> Path:
+def _sayfa_maliyet_kat(
+    wb: Workbook, sonuclar: list[MetrajSonucu], ayarlar
+) -> None:
+    """Kat bazli yaklasik maliyet karsilastirma sayfasi."""
+    from hakedis.maliyet import maliyet_hesapla
+
+    ws = wb.create_sheet("Maliyet Kat")
+    for harf, g in {"A": 22, "B": 14, "C": 14, "D": 16, "E": 34}.items():
+        ws.column_dimensions[harf].width = g
+    ws["A1"] = "KAT BAZINDA YAKLASIK MALIYET"
+    ws["A1"].font = Font(bold=True, size=14)
+    satir = 3
+    basliklar = [
+        ("Kat", "A"), ("Ara Toplam", "B"), ("KDV", "C"),
+        ("Genel Toplam", "D"), ("Not", "E"),
+    ]
+    for i, (ad, _h) in enumerate(basliklar, start=1):
+        h = ws.cell(row=satir, column=i, value=ad)
+        h.fill = BASLIK_DOLGU
+        h.font = BASLIK_YAZI
+        h.border = CERCEVE
+    satir += 1
+
+    toplamlar = [0.0, 0.0, 0.0]
+    for s in sonuclar:
+        m = maliyet_hesapla(s, ayarlar)
+        eksik = ", ".join(m["fiyatsiz_pozlar"]) if m["fiyatsiz_pozlar"] else ""
+        degerler = [
+            s.kat or "?",
+            m["ara_toplam"],
+            m["kdv"],
+            m["genel_toplam"],
+            eksik,
+        ]
+        for i, deger in enumerate(degerler, start=1):
+            h = ws.cell(row=satir, column=i, value=deger)
+            h.border = CERCEVE
+            if i in (2, 3, 4):
+                h.number_format = "0.00"
+        if eksik:
+            ws.cell(row=satir, column=5).font = UYARI_YAZI
+        for i, t in enumerate((m["ara_toplam"], m["kdv"], m["genel_toplam"]), start=1):
+            toplamlar[i - 1] += t
+        satir += 1
+
+    degerler = ["TOPLAM"] + [round(t, 2) for t in toplamlar] + [""]
+    for i, deger in enumerate(degerler, start=1):
+        h = ws.cell(row=satir, column=i, value=deger)
+        h.font = Font(bold=True, size=12)
+        h.fill = GRUP_DOLGU
+        h.border = CERCEVE
+        if i in (2, 3, 4):
+            h.number_format = "0.00"
+
+
+def excel_yaz_toplu(
+    sonuclar: list[MetrajSonucu], hedef: str | Path, ayarlar=None
+) -> Path:
     """Cok katli/paftali calismanin ortak Excel dosyasini yazar.
 
     Kat Ozeti ilk sayfada; metraj cetveli/eleman/uyari sayfalari kat bazli
-    kirilimlarla gelir. Bireysel katlar icin `--kat-adlari` (cok dosya) veya
-    `--paftalar` (cok PDF sayfasi) kullanilir.
+    kirilimlarla gelir. `ayarlar` verilir ve `maliyet.aktif` ise YIGS
+    formatinda yaklasik maliyet + kat bazli karsilastirma sayfalari eklenir.
+    Bireysel katlar icin `--kat-adlari` (cok dosya) veya `--paftalar`
+    (cok PDF sayfasi) kullanilir.
     """
+    from hakedis.maliyet import maliyet_hesapla
     from hakedis.metraj import sonuclari_birlestir
 
     hedef = Path(hedef)
@@ -534,6 +629,12 @@ def excel_yaz_toplu(sonuclar: list[MetrajSonucu], hedef: str | Path) -> Path:
     _sayfa_kirik_olcu(wb, birlesik)
     _sayfa_elemanlar(wb, birlesik)
     _sayfa_uyarilar(wb, birlesik)
+    if ayarlar is not None:
+        if ayarlar.al("maliyet.aktif", False):
+            _sayfa_maliyet(wb, birlesik, maliyet_hesapla(birlesik, ayarlar))
+            _sayfa_maliyet_kat(wb, sonuclar, ayarlar)
+        else:
+            _sayfa_maliyet(wb, birlesik, None)
 
     hedef.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(hedef))

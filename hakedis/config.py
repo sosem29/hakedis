@@ -124,6 +124,8 @@ class Ayarlar:
             "perde",
             "kiris",
             "doseme",
+            "kapi",
+            "pencere",
             "metin",
         ):
             for desen in self.katman_desenleri(tip):

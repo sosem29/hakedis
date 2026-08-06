@@ -21,6 +21,8 @@ class ElemanTipi(str, Enum):
     DOSEME = "Doseme"
     MERDIVEN = "Merdiven"
     BOSLUK = "Bosluk"
+    KAPI = "Kapi"
+    PENCERE = "Pencere"
     BILINMEYEN = "Bilinmeyen"
 
     @property
@@ -32,6 +34,8 @@ class ElemanTipi(str, Enum):
             ElemanTipi.DOSEME: "D",
             ElemanTipi.MERDIVEN: "M",
             ElemanTipi.BOSLUK: "B",
+            ElemanTipi.KAPI: "KA",
+            ElemanTipi.PENCERE: "PN",
             ElemanTipi.BILINMEYEN: "X",
         }[self]
 
@@ -171,6 +175,8 @@ class KirikOlcuSatiri:
 
     @property
     def miktar(self) -> float:
+        if self.birim == "adet":
+            return self.benzer
         if self.kg is not None:
             return self.kg
         if self.hacim is not None:

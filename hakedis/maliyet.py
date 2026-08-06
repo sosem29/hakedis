@@ -2,20 +2,71 @@
 
 Poz numaralari (ornegin "16.058/1-K") ile metraj cetvelindeki miktarlar
 eslenir ve tutar = miktar x birim fiyat uygulanir. Dusum satirlari eksili
-yazilir. Fiyatlar yapilandirmadaki `maliyet.poz_fiyatlari` bolumunden gelir;
-guncel bakanlik birim fiyatlari buraya girilir (bu moduldeki degerler
-ORNEKTIR).
+yazilir.
+
+Fiyat kaynaklari (ustteki ustune biner):
+  1. `birim_fiyatlar.yml`  - yil bazli resmi birim fiyat veritabani
+     (`maliyet.fiyatlar_yolu` ile yol verilir; yoksa sessizce atlanir).
+  2. `maliyet.poz_fiyatlari` - yapilandirmadaki poz -> fiyat tablosu.
+
+Cikti YIGS (yaklasik maliyet) duzenine yakin hazirlanir: her kalemde sirasi,
+poz no, tanim, birim, miktar, birim fiyat ve tutar bulunur ve kalemler
+bolumlere (betonarme, siva, dograma, kaplama) ayrilir.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from hakedis.config import Ayarlar
 from hakedis.model import MetrajSonucu
+
+# Poz on eklerine gore yaklasik maliyet bolumleri
+BOLUMLER: list[tuple[str, tuple[str, ...]]] = [
+    ("BETONARME", ("16.", "18.", "21.011")),
+    ("SIVA-BADANA", ("21.",)),
+    ("DOGRAMA", ("22.",)),
+    ("DOSEME KAPLAMA", ("23.",)),
+]
+
+
+def _bolum(poz: str) -> str:
+    for ad, on_ekler in BOLUMLER:
+        if poz.startswith(on_ekler):
+            return ad
+    return "DIGER"
+
+
+def fiyat_sozlugu(ayarlar: Ayarlar) -> dict[str, float]:
+    """Birim fiyat veritabanini tek sozlukte birlestirir (config oncelikli)."""
+    birlestik: dict[str, float] = {}
+    yol = str(ayarlar.al("maliyet.fiyatlar_yolu", "") or "").strip()
+    if yol:
+        import yaml
+
+        p = Path(yol)
+        if p.exists():
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    tablo = yaml.safe_load(f) or {}
+                for k, v in tablo.items():
+                    try:
+                        birlestik[str(k)] = float(v)
+                    except (TypeError, ValueError):  # pragma: no cover
+                        continue
+            except Exception:  # pragma: no cover
+                pass
+    for k, v in (ayarlar.al("maliyet.poz_fiyatlari", {}) or {}).items():
+        try:
+            birlestik[str(k)] = float(v)
+        except (TypeError, ValueError):  # pragma: no cover
+            continue
+    return birlestik
 
 
 def maliyet_hesapla(sonuc: MetrajSonucu, ayarlar: Ayarlar) -> dict:
     """Metraj sonucuna poz fiyatlarini uygulayarak maliyet tablosu uretir."""
-    fiyatlar = ayarlar.al("maliyet.poz_fiyatlari", {}) or {}
+    fiyatlar = fiyat_sozlugu(ayarlar)
     kalemler: list[dict] = []
     fiyatli_pozlar: set[str] = set()
 
@@ -27,7 +78,7 @@ def maliyet_hesapla(sonuc: MetrajSonucu, ayarlar: Ayarlar) -> dict:
         miktar = s.miktar
         if s.dusum_mu:
             miktar = -miktar
-        tutar = miktar * float(fiyat)
+        tutar = miktar * fiyat
         if abs(tutar) < 1e-9:
             continue
         kalemler.append(
@@ -37,11 +88,17 @@ def maliyet_hesapla(sonuc: MetrajSonucu, ayarlar: Ayarlar) -> dict:
                 "eleman": s.eleman_adi,
                 "birim": s.birim,
                 "miktar": miktar,
-                "fiyat": float(fiyat),
+                "fiyat": fiyat,
                 "tutar": tutar,
                 "dusum": s.dusum_mu,
+                "bolum": _bolum(s.poz),
             }
         )
+
+    bolum_sirasi = {ad: i for i, (ad, _) in enumerate(BOLUMLER)}
+    kalemler.sort(key=lambda k: (bolum_sirasi.get(k["bolum"], 99), 0))
+    for i, k in enumerate(kalemler, 1):
+        k["sira"] = i
 
     ara_toplam = sum(k["tutar"] for k in kalemler)
     kdv_oran = float(ayarlar.al("maliyet.kdv_oran", 20))
@@ -60,7 +117,8 @@ def maliyet_hesapla(sonuc: MetrajSonucu, ayarlar: Ayarlar) -> dict:
         "fiyatsiz_pozlar": eksik,
         "not": (
             "Birim fiyatlar ORNEKTIR. Kesin bedel icin guncel bakanlik/il "
-            "birim fiyatlarini 'Maliyet' bolumune girin."
+            "birim fiyatlarini 'Maliyet' bolumune veya birim_fiyatlar.yml "
+            "dosyasina girin."
         ),
     }
 
@@ -69,22 +127,26 @@ def maliyet_konsol(m: dict) -> str:
     """Maliyet sozlugunu konsola yazdirilabilir metne cevirir."""
     if not m["kalemler"]:
         return "Maliyet: hicbir poz icin birim fiyat tanimli degil."
-    satirlar = ["", "YAKLASIK MALIYET", "=" * 62]
-    satirlar.append(f"{'POZ':<16}{'TANIM':<34}{'MIKTAR':>10}  TUTAR")
-    satirlar.append("-" * 62)
+    satirlar = ["", "YAKLASIK MALIYET", "=" * 66]
+    satirlar.append(f"{'NO':>4} {'POZ':<16}{'TANIM':<32}{'MIKTAR':>9}  TUTAR")
+    satirlar.append("-" * 66)
+    son_bolum = None
     for k in m["kalemler"]:
+        if k["bolum"] != son_bolum:
+            satirlar.append(f"  {k['bolum']}")
+            son_bolum = k["bolum"]
         isaret = "-" if k["dusum"] else ""
         satirlar.append(
-            f"{k['poz']:<16}{k['tanim'][:33]:<34}"
-            f"{isaret}{k['miktar']:>9.2f}  {k['tutar']:>12,.0f}"
+            f"{k['sira']:>4} {k['poz']:<16}{k['tanim'][:31]:<32}"
+            f"{isaret}{k['miktar']:>8.2f}  {k['tutar']:>12,.0f}"
         )
-    satirlar.append("-" * 62)
-    satirlar.append(f"ARA TOPLAM{'':<50}{m['ara_toplam']:>12,.0f}")
+    satirlar.append("-" * 66)
+    satirlar.append(f"ARA TOPLAM{'':<52}{m['ara_toplam']:>12,.0f}")
     satirlar.append(
-        f"KDV (%{m['kdv_oran']:g}){'':<49}{m['kdv']:>12,.0f}"
+        f"KDV (%{m['kdv_oran']:g}){'':<51}{m['kdv']:>12,.0f}"
     )
     satirlar.append(
-        f"GENEL TOPLAM ({m['para_birimi']}){'':<38}{m['genel_toplam']:>12,.0f}"
+        f"GENEL TOPLAM ({m['para_birimi']}){'':<40}{m['genel_toplam']:>12,.0f}"
     )
     if m["fiyatsiz_pozlar"]:
         satirlar.append(

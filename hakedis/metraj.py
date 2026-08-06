@@ -638,6 +638,157 @@ def _merdiven_satirlari(e: Eleman, ayarlar: Ayarlar) -> list[KirikOlcuSatiri]:
 # ---------------------------------------------------------------------------
 
 
+def _dogrular_satirlari(
+    elemanlar: list[Eleman], ayarlar: Ayarlar
+) -> list[KirikOlcuSatiri]:
+    """Kapi/pencere dogrulama elemanlarini 'adet' satirina donusturur.
+
+    Ayni tip/olcudeki dogramalar (ornegin 4 adet KD101 90x220) tek satirda
+    toplanir; poz numarasi ve adet miktari ihale listesine yatkindir.
+    """
+    gruplar: dict[tuple, dict] = {}
+    for e in elemanlar:
+        if e.tip not in (ElemanTipi.KAPI, ElemanTipi.PENCERE):
+            continue
+        en = float(e.olculer.get("en", 0.9) or 0.9)
+        boy = float(e.olculer.get("boy", 2.2) or 2.2)
+        anahtar = (e.tip, e.ad, round(en, 3), round(boy, 3))
+        g = gruplar.setdefault(
+            anahtar, {"ad": e.ad, "en": en, "boy": boy, "metinler": []}
+        )
+        g["metinler"].append(e.etiket_metni or f"{e.ad} {en * 100:.0f}x{boy * 100:.0f}")
+
+    satirlar: list[KirikOlcuSatiri] = []
+    for (tip, ad, en, boy), g in gruplar.items():
+        kapi = tip == ElemanTipi.KAPI
+        poz = ayarlar.poz("kapi" if kapi else "pencere")
+        adet = len(g["metinler"])
+        etiketler = sorted(set(g["metinler"]))[:6]
+        ek_metin = "" if len(etiketler) == len(g["metinler"]) else f" ... +{len(g['metinler']) - len(etiketler)}"
+        satirlar.append(
+            KirikOlcuSatiri(
+                poz=poz,
+                eleman_adi=g["ad"] or "?",
+                tip=tip,
+                tanim=(
+                    f"{'Ic kapi' if kapi else 'Pencere'} dogramasi "
+                    f"{en * 100:.0f}x{boy * 100:.0f} cm"
+                ),
+                benzer=float(adet),
+                en=_y(en),
+                boy=_y(boy),
+                alan=None,
+                birim="adet",
+                formul=f"{adet} adet x ({en * 100:.0f}x{boy * 100:.0f} cm)",
+                kat=ayarlar.kat_adi,
+                detay=[
+                    f"Dogrulama etiketleri: {', '.join(etiketler)}{ek_metin}",
+                    "YAKLASIK: olcu etiketten okundu, fiziksel olcekle dogrulayin.",
+                ],
+            )
+        )
+    return satirlar
+
+
+def _siva_kaplama_satirlari(
+    satirlar: list[KirikOlcuSatiri], ayarlar: Ayarlar
+) -> list[KirikOlcuSatiri]:
+    """Betonarme yuzeylerinden yaklasik siva/badana ve doseme ustu kaplama.
+
+    Siva: kolon+perde+kiris kalip (m2) toplamindan yuzey_dusumu ile; tavan:
+    doseme net alanindan; kaplama/tesviye: doseme net alanindan. Tum degerler
+    kalip planindan turetildigi icin YAKLASIK'tir.
+    """
+    yeni: list[KirikOlcuSatiri] = []
+    kat = ayarlar.kat_adi
+    yapilar = [
+        s
+        for s in satirlar
+        if not s.dusum_mu
+        and s.birim == "m2"
+        and s.tip in (ElemanTipi.KOLON, ElemanTipi.PERDE, ElemanTipi.KIRIS)
+    ]
+    dosemeler = [
+        s
+        for s in satirlar
+        if not s.dusum_mu and s.birim == "m2" and s.tip == ElemanTipi.DOSEME
+    ]
+    yapilar_m2 = sum(s.alan or 0.0 for s in yapilar)
+    doseme_m2 = sum(s.alan or 0.0 for s in dosemeler)
+
+    if bool(ayarlar.al("siva.aktif", False)):
+        oran = float(ayarlar.al("siva.yuzey_dusumu", 0.90) or 0.90)
+        if yapilar_m2 > 1e-6:
+            siva = yapilar_m2 * oran
+            yeni.append(
+                KirikOlcuSatiri(
+                    poz=ayarlar.poz("siva"),
+                    eleman_adi="SIVA",
+                    tip=ElemanTipi.BILINMEYEN,
+                    tanim="Ic siva (kolon/perde/kiris yuzeyleri) - YAKLASIK",
+                    benzer=1,
+                    alan=_y(siva, 4),
+                    birim="m2",
+                    formul=f"{yapilar_m2:.3f} m2 kalip x dusum {oran:.2f}",
+                    kat=kat,
+                    detay=[
+                        "Kalip planindan turetildi; kot farklari ve duvar "
+                        "birlesimleri bilinmez, deger tecrubeye dayanir."
+                    ],
+                )
+            )
+        if doseme_m2 > 1e-6:
+            yeni.append(
+                KirikOlcuSatiri(
+                    poz=ayarlar.poz("siva_tavan"),
+                    eleman_adi="TAVAN",
+                    tip=ElemanTipi.BILINMEYEN,
+                    tanim="Tavan siva + badana - YAKLASIK",
+                    benzer=1,
+                    alan=_y(doseme_m2, 4),
+                    birim="m2",
+                    formul=f"doseme net alani {doseme_m2:.3f} m2",
+                    kat=kat,
+                    detay=[
+                        "Doseme (plak) net alanindan; asma tavan/baca yeri "
+                        "bilinmez, fiziksel kontrol gerekir."
+                    ],
+                )
+            )
+
+    if bool(ayarlar.al("kaplama.aktif", False)) and doseme_m2 > 1e-6:
+        yeni.append(
+            KirikOlcuSatiri(
+                poz=str(ayarlar.al("kaplama.tesviye_poz", "23.062/T")),
+                eleman_adi="KAPLAMA",
+                tip=ElemanTipi.BILINMEYEN,
+                tanim="Doseme tesviye (suphe tabakasi) - YAKLASIK",
+                benzer=1,
+                alan=_y(doseme_m2, 4),
+                birim="m2",
+                formul=f"doseme net alani {doseme_m2:.3f} m2",
+                kat=kat,
+                detay=["YAKLASIK: kaplama cinsi (seramik/parke) mahal planindan "
+                       "okunamaz; tek cins varsayildi."],
+            )
+        )
+        yeni.append(
+            KirikOlcuSatiri(
+                poz=str(ayarlar.al("kaplama.seramik_poz", "23.062/S")),
+                eleman_adi="KAPLAMA",
+                tip=ElemanTipi.BILINMEYEN,
+                tanim="Seramik doseme kaplama - YAKLASIK",
+                benzer=1,
+                alan=_y(doseme_m2, 4),
+                birim="m2",
+                formul=f"doseme net alani {doseme_m2:.3f} m2",
+                kat=kat,
+                detay=["YAKLASIK: cins secimi mahal plani ister."],
+            )
+        )
+    return yeni
+
+
 def metraj_hesapla(
     elemanlar: list[Eleman], ayarlar: Ayarlar, uyarilar: list[str] | None = None
 ) -> MetrajSonucu:
@@ -659,6 +810,8 @@ def metraj_hesapla(
         ElemanTipi.KIRIS: 2,
         ElemanTipi.DOSEME: 3,
         ElemanTipi.MERDIVEN: 4,
+        ElemanTipi.KAPI: 5,
+        ElemanTipi.PENCERE: 6,
     }
     for e in sorted(elemanlar, key=lambda x: (sira.get(x.tip, 9), x.ad)):
         if e.tip == ElemanTipi.KOLON:
@@ -671,6 +824,19 @@ def metraj_hesapla(
             satirlar.extend(_doseme_satirlari(e, ayarlar, kirisler, mesnetler))
         elif e.tip == ElemanTipi.MERDIVEN:
             satirlar.extend(_merdiven_satirlari(e, ayarlar))
+
+    satirlar.extend(_dogrular_satirlari(elemanlar, ayarlar))
+    ek = _siva_kaplama_satirlari(satirlar, ayarlar)
+    if ek:
+        satirlar.extend(ek)
+        sonuc_uyarilari = list(uyarilar or [])
+        sonuc_uyarilari.append(
+            "Siva/kaplama metraji kalip planindan YAKLASIK uretildi; kot "
+            "farklari ve kaplama cinsleri (seramik/parke) mahal planindan "
+            "okunamadigi icin kesin bedele esas degerler icin mahal "
+            "planlarini kullanin."
+        )
+        uyarilar = sonuc_uyarilari
 
     sonuc = MetrajSonucu(
         kat=kat,

@@ -422,6 +422,7 @@ def elemanlari_tespit_et(
         _kirisleri_mesnetlerde_kir(elemanlar, uyarilar)
 
     # --- Etiket eslestirme -----------------------------------------------
+    _dogrular_tespit(etiketler, ayarlar, elemanlar)
     _etiketleri_bagla(elemanlar, etiketler, ayarlar)
     _adlari_tamamla(elemanlar)
     _kesitleri_etiketten_guncelle(elemanlar, ayarlar)
@@ -434,6 +435,64 @@ def elemanlari_tespit_et(
         )
 
     return elemanlar, uyarilar
+
+
+def _dogrular_tespit(etiketler: list[Etiket], ayarlar: Ayarlar, elemanlar: list) -> None:
+    """Kapi/pencere dogrulama etiketlerini (KD101, 90x220, P12) elemana cevirir."""
+    if not bool(ayarlar.al("kapi.aktif", True) or ayarlar.al("pencere.aktif", True)):
+        return
+    on_ekler = {
+        "kapi": str(ayarlar.al("kapi.on_ekler", "KD")),
+        "pencere": str(ayarlar.al("pencere.on_ekler", "P")),
+    }
+    birim = str(ayarlar.al("etiket.kesit_birimi", "cm"))
+    from hakedis.config import birim_carpani
+    import re as _re
+
+    yeni: list[Eleman] = []
+    for et in etiketler:
+        if not et.dogrulama or et.kullanildi:
+            continue
+        # Kalinligi okunmus etiket yapisal (perde/doseme) etikettir
+        if et.t is not None:
+            continue
+        tip = ElemanTipi.PENCERE
+        on = (et.ad or "")
+        if on.startswith(tuple(c for c in on_ekler["kapi"].split(",") if c)) or "KAP" in on:
+            tip = ElemanTipi.KAPI
+        elif on.startswith(tuple(c for c in on_ekler["pencere"].split(",") if c)):
+            tip = ElemanTipi.PENCERE
+        if not bool(ayarlar.al(f"{'kapi' if tip == ElemanTipi.KAPI else 'pencere'}.aktif", True)):
+            continue
+
+        e = Eleman(ad=on or "?", tip=tip, cevre=[], kaynak_katman=et.katman)
+        e.etiket_metni = et.metin
+        # Plan konumunda kucuk bir isaretci (svg/toplu pafta icin)
+        p = et.konum
+        e.cevre = [
+            Nokta(p.x - 0.06, p.y - 0.06),
+            Nokta(p.x + 0.06, p.y - 0.06),
+            Nokta(p.x + 0.06, p.y + 0.06),
+            Nokta(p.x - 0.06, p.y + 0.06),
+        ]
+        e.olculer["en"] = 0.9
+        e.olculer["boy"] = 2.2
+        # "90x220" gibi olcu iceren dogrulama etiketlerini coz
+        om = _re.search(r"(\d{1,3})\s*[xX*×]\s*(\d{1,3})", et.metin)
+        if om:
+            e.olculer["en"] = float(om.group(1)) * birim_carpani(birim)
+            e.olculer["boy"] = float(om.group(2)) * birim_carpani(birim)
+        if not e.ad or e.ad == "?":
+            e.ad = f"{e.olculer['en'] * 100:.0f}x{e.olculer['boy'] * 100:.0f}"
+        e.guven = 0.6
+        e.not_ekle(
+            "Dogrulama etiketinden okundu; dograma listesi metraj cetvelinde "
+            "adet olarak gorunur. Fiziksel olcekle dogrulayin."
+        )
+        et.kullanildi = True
+        yeni.append(e)
+
+    elemanlar.extend(yeni)
 
 
 def _sezgisel_tespit(

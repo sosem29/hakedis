@@ -28,6 +28,7 @@ K101   Beam concrete 0.25/0.50         0.998 m3   b=0.25 x (h-t)=0.35 x L=11.400
 | **Beam** | Closed polygon *or* two parallel lines; **split into net spans at supports** | Concrete `b×(h−t)×L`, formwork soffit + 2 sides |
 | **Slab** | Shoelace area from corner coordinates, openings deducted | Concrete `A×t`, table formwork − (beam+column+wall footprint **union**) |
 | **Stair** | Closed plan footprint | Concrete `A×k×t`, formwork `A×k` — `k` from riser/tread or explicit |
+| **Door / Window** | Drawing labels (`KD101`, `P101`, `90x220`) | Joinery count per size (`adet`) — a doğrama listesi line per unique opening |
 
 Optional rules (enabled via config):
 
@@ -36,8 +37,15 @@ Optional rules (enabled via config):
 - **Ribbed (guse) and flat-slab (mantar) floors:** `doseme.tip` applies
   approximation rules to concrete volume; a manual-check warning is emitted.
 - **Stair slope factor:** given `merdiven.riht/basamak`, `k = √(1+(riser/tread)²)`.
+- **Plaster / paint (m²):** with `siva.aktif`, inner plaster of
+  column/wall/beam faces and ceiling plaster are derived from the formwork
+  quantities (approximate — flagged in the output).
+- **Floor covering (m²):** with `kaplama.aktif`, screed + ceramic lines are
+  derived from the net slab area (approximate).
 - **Approximate cost:** multiply measured quantities by ministry/item-rate unit
-  prices to produce a bill of quantities and an estimate with KDV.
+  prices to produce a bill of quantities and an estimate with KDV, laid out in
+  a tender-ready (YİGŞ-style) order: running number, item no, description,
+  unit, quantity, unit price, amount, with per-trade subtotals.
 
 Two details are handled deliberately:
 
@@ -105,6 +113,17 @@ hakedis maliyet sonuc.json --config ofis.yml       # apply unit prices
 Set `maliyet.aktif: true` in the config to embed the cost table in the take-off
 console output and the Excel workbook automatically.
 
+Prices come from two sources (the config wins on conflict):
+
+1. an optional year-based unit-price database file, e.g. `birim_fiyatlar.yml`,
+   referenced with `maliyet.fiyatlar_yolu`;
+2. the `maliyet.poz_fiyatlari` table in your config.
+
+The console and Excel cost output follow the tender (YİGŞ) layout with running
+numbers, trade sections (`BETONARME`, `SIVA-BADANA`, `DOGRAMA`,
+`DOSEME KAPLAMA`), per-section subtotals, and a list of any poz numbers that
+still have no price.
+
 ## Visual UI (web + desktop)
 
 Both faces share the same single-page interface; both start a local server
@@ -125,14 +144,17 @@ Tabs:
 - **Eşleştir (Mapping):** scan the file for PDF colors or DXF/DWG layers, then
   assign an element type to each. This replaces the "renk_esleme bos" warnings
   and gives each candidate a suggested mapping (including a smart "ignore"
-  suggestion for hatching/measurement layers).
+  suggestion for hatching/measurement layers). **Apply** writes the mapping
+  into the active configuration and immediately runs the take-off — a closed
+  loop from scan → mapping → measured output.
 - **Toplu Metraj (Bulk):** add floor files one by one; produces a floor-summary
-  table and a shared take-off table.
+  table, a shared take-off table, and — when cost is active — a
+  **floor-by-floor cost comparison**.
 - **PDF İncele (Inspect):** color/line-thickness dump of a PDF sheet plus a
   ready-to-use `renk_esleme` YAML template.
-- **Maliyet (Cost):** edit poz unit prices, KDV, and currency; compute an
-  estimate from the last take-off, and toggle whether the cost is embedded in
-  take-off results and Excel.
+- **Maliyet (Cost):** edit poz unit prices, KDV, currency, and the optional
+  unit-price database file; compute an estimate from the last take-off, and
+  toggle whether the cost is embedded in take-off results and Excel.
 - **Ayarlar (Settings):** quick form or advanced YAML editor — same
   configuration as `config-yaz`, managed from the UI.
 
@@ -147,7 +169,8 @@ automatically falls back to the browser.
 - `plan.metraj.kontrol.svg` — **control sheet**
 - `--json` for machine-readable output (for handing off to other systems)
 - `plan.toplu.xlsx` for bulk runs — Floor Summary / Take-off Table / Broken-out /
-  Elements / Warnings
+  Elements / Warnings / Maliyet (YİGŞ order) + **Maliyet Kat** (floor-by-floor
+  cost comparison, when enabled)
 
 ### Control sheet
 
@@ -207,14 +230,36 @@ donati:                        # APPROXIMATE reinforcement (kg per m³ concrete)
     doseme: 95
     merdiven: 70
 
+siva:                          # APPROXIMATE plaster / paint from formwork (m²)
+  aktif: false
+  yuzey_dusumu: 0.90
+
+kaplama:                       # APPROXIMATE floor covering from net slab area
+  aktif: false
+  tesviye_poz: "23.062/T"
+  seramik_poz: "23.062/S"
+
+kapi:                          # door doğrama listesi from labels (KD101, ...)
+  aktif: true
+  on_ekler: "KD"
+pencere:                       # window doğrama listesi (P101, 90x220)
+  aktif: true
+  on_ekler: "P"
+
 pozlar:                        # your unit-price bill item numbers
   kolon_beton: "16.058/1-K"
   demir: "18.001"
+  kapi: "22.201"
+  pencere: "22.211"
+  siva: "21.061"
+  siva_tavan: "21.071"
+  kaplama: "23.062/S"
 
 maliyet:                       # approximate cost (unit prices x quantities)
   aktif: false
   para_birimi: "TL"
   kdv_oran: 20
+  fiyatlar_yolu: "birim_fiyatlar.yml"   # optional year-based price database
   poz_fiyatlari:               # poz -> unit price (ILLUSTRATIVE — update these)
     "16.058/1-K": 4200
     "21.011/K": 480
@@ -223,8 +268,9 @@ maliyet:                       # approximate cost (unit prices x quantities)
 
 Label reading understands `K101 25/50`, `S01 30x60`, `P1 25`, `TD=15`,
 `K-12 (30/70)`; sections written in metres such as `0.25/0.50` are
-distinguished as well. If your format differs, add a regex under
-`etiket.desenler`.
+distinguished as well. Joinery labels (`KD101`, `P101`, `90x220`) are kept
+separate from structural labels and turned into a door/window doğrama listesi.
+If your format differs, add a regex under `etiket.desenler`.
 
 ## Take-off from PDF
 
@@ -280,11 +326,16 @@ Honestly stated so you can trust the output:
 - **Ribbed (guse) and flat (mantar) slabs** use coefficient-based approximate
   rules; the actual rib/guse geometry is not read and manual review is required.
 - **Curved elements** have no special handling and come out approximate.
+- **Doors, windows, plaster and covering quantities are read from the plan
+  (labels / formwork surfaces).** They are approximate and flagged as such:
+  floor levels, room finishes (ceramic vs. parquet) and actual opening frames
+  come from the architectural (mahal) plans, which are not read.
 - One sheet is processed per run. For multi-storey work use the `toplu` command
   (multiple files or a multi-page PDF), naming each floor with
   `--kat-adlari` / `--paftalar` and producing a shared Excel and JSON output.
 - **Costs are illustrative.** Unit prices are examples; always enter current
-  ministry / provincial unit prices before relying on an estimate.
+  ministry / provincial unit prices (or a `birim_fiyatlar.yml` database) before
+  relying on an estimate.
 
 The output is **a take-off to be checked, not a checked take-off.** Do not
 submit it before reviewing the control sheet and the Warnings sheet.
@@ -293,7 +344,7 @@ submit it before reviewing the control sheet and the Warnings sheet.
 
 ```bash
 pip install -e ".[test]"
-pytest -q          # 128 tests: geometry, labels, end-to-end DXF/PDF, web API
+pytest -q          # 137 tests: geometry, labels, end-to-end DXF/PDF, web API
 ```
 
 Expected values in the end-to-end tests are hand-computed so that the take-off

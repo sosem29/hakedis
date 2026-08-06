@@ -151,7 +151,7 @@ def _excel_b64(sonuc, toplu: bool = False, ayarlar=None) -> str:
         yol = tmp.name
     try:
         if toplu:
-            excel_yaz_toplu(sonuc, yol)
+            excel_yaz_toplu(sonuc, yol, ayarlar=ayarlar)
         else:
             excel_yaz(sonuc, yol, ayarlar=ayarlar)
         return base64.b64encode(Path(yol).read_bytes()).decode("ascii")
@@ -363,7 +363,18 @@ async def toplu(
         paket["maliyet"] = maliyet_hesapla(
             sonuclari_birlestir(sonuclar), ayarlar_nesnesi
         )
-    paket["excel_b64"] = _excel_b64(sonuclar, toplu=True)
+        paket["kat_maliyetleri"] = [
+            {
+                "kat": s.kat or "?",
+                "ara_toplam": m["ara_toplam"],
+                "kdv": m["kdv"],
+                "genel_toplam": m["genel_toplam"],
+                "fiyatsiz_pozlar": m["fiyatsiz_pozlar"],
+            }
+            for s in sonuclar
+            for m in [maliyet_hesapla(s, ayarlar_nesnesi)]
+        ]
+    paket["excel_b64"] = _excel_b64(sonuclar, toplu=True, ayarlar=ayarlar_nesnesi)
     return paket
 
 

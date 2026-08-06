@@ -125,52 +125,45 @@ def _json_yaz(sonuc, hedef: Path) -> None:
 
 def komut_maliyet(args) -> int:
     """Daha once uretilmis bir metraj JSON'una birim fiyatlari uygular."""
-    from hakedis.maliyet import maliyet_konsol
+    from hakedis.maliyet import maliyet_hesapla, maliyet_konsol
+    from hakedis.model import ElemanTipi, KirikOlcuSatiri, MetrajSonucu
 
     veri = json.loads(Path(args.metraj_json).read_text(encoding="utf-8"))
-    fiyatlar = ayarlari_yukle(args.config).al("maliyet.poz_fiyatlari", {}) or {}
-
+    ayarlar = ayarlari_yukle(args.config)
     satirlar = veri["satirlar"] if isinstance(veri, dict) and "satirlar" in veri else veri
-    kalemler = []
-    fiyatli = set()
-    for s in satirlar:
-        fiyat = fiyatlar.get(s["poz"])
-        if fiyat is None:
-            continue
-        fiyatli.add(s["poz"])
-        miktar = s["miktar"]
-        if s.get("dusum"):
-            miktar = -miktar
-        tutar = miktar * float(fiyat)
-        if abs(tutar) < 1e-9:
-            continue
-        kalemler.append(
-            {
-                "poz": s["poz"],
-                "tanim": s.get("tanim", ""),
-                "eleman": s.get("eleman", ""),
-                "birim": s.get("birim", ""),
-                "miktar": miktar,
-                "fiyat": float(fiyat),
-                "tutar": tutar,
-                "dusum": bool(s.get("dusum")),
-            }
-        )
-    ara = sum(k["tutar"] for k in kalemler)
-    kdv = ara * float(ayarlari_yukle(args.config).al("maliyet.kdv_oran", 20)) / 100.0
-    eksik = sorted({s["poz"] for s in satirlar} - fiyatli)
-    maliyet = {
-        "aktif": True,
-        "para_birimi": ayarlari_yukle(args.config).al("maliyet.para_birimi", "TL"),
-        "kdv_oran": ayarlari_yukle(args.config).al("maliyet.kdv_oran", 20),
-        "kalemler": kalemler,
-        "ara_toplam": ara,
-        "kdv": kdv,
-        "genel_toplam": ara + kdv,
-        "fiyatsiz_pozlar": eksik,
-        "not": "Birim fiyatlar ORNEKTIR; guncel birim fiyatlarinizi girin.",
-    }
-    print(maliyet_konsol(maliyet))
+
+    def _tip(t: str) -> ElemanTipi:
+        try:
+            return ElemanTipi(t)
+        except ValueError:  # pragma: no cover
+            return ElemanTipi.BILINMEYEN
+
+    sonuc = MetrajSonucu(
+        kat=str(veri.get("kat", "")) if isinstance(veri, dict) else "",
+        kaynak_dosya=str(veri.get("kaynak_dosya", "")) if isinstance(veri, dict) else "",
+        satirlar=[
+            KirikOlcuSatiri(
+                poz=s["poz"],
+                eleman_adi=s.get("eleman", ""),
+                tip=_tip(s.get("tip", "Bilinmeyen")),
+                tanim=s.get("tanim", ""),
+                benzer=float(s.get("benzer", 1) or 1),
+                en=float(s["en"]) if s.get("en") is not None else None,
+                boy=float(s["boy"]) if s.get("boy") is not None else None,
+                yukseklik=float(s["yukseklik"]) if s.get("yukseklik") is not None else None,
+                alan=float(s["alan"]) if s.get("alan") is not None else None,
+                hacim=float(s["hacim"]) if s.get("hacim") is not None else None,
+                kg=float(s["demir"]) if s.get("demir") is not None else None,
+                birim=s.get("birim", ""),
+                formul=s.get("formul", ""),
+                kat=s.get("kat", ""),
+                detay=s.get("detay", []),
+                dusum_mu=bool(s.get("dusum")),
+            )
+            for s in satirlar
+        ],
+    )
+    print(maliyet_konsol(maliyet_hesapla(sonuc, ayarlar)))
     return 0
 
 
@@ -392,7 +385,7 @@ def _toplu_isleri_hazirla(
 
 def komut_toplu(args) -> int:
     """Cok katli / cok paftali metraj: birden fazla dosya veya PDF sayfasi."""
-    from hakedis.metraj import plandan_metraj
+    from hakedis.metraj import plandan_metraj, sonuclari_birlestir
     from hakedis.report import excel_yaz_toplu, konsol_ozeti_toplu
 
     temel = _ayarlari_hazirla(args)
@@ -406,9 +399,21 @@ def komut_toplu(args) -> int:
 
     print(konsol_ozeti_toplu(sonuclar))
 
+    if temel.al("maliyet.aktif", False):
+        from hakedis.maliyet import maliyet_hesapla, maliyet_konsol
+
+        print(maliyet_konsol(maliyet_hesapla(sonuclari_birlestir(sonuclar), temel)))
+        print("KAT BAZINDA YAKLASIK MALIYET")
+        for s in sonuclar:
+            m = maliyet_hesapla(s, temel)
+            print(
+                f"  {s.kat or '?':<20} ara {m['ara_toplam']:>14,.0f}  "
+                f"genel {m['genel_toplam']:>14,.0f} TL"
+            )
+
     kaynak = Path(args.dosyalar[0])
     cikti = Path(args.cikti) if args.cikti else kaynak.with_suffix(".toplu.xlsx")
-    excel_yaz_toplu(sonuclar, cikti)
+    excel_yaz_toplu(sonuclar, cikti, ayarlar=temel)
     print(f"\nToplu metraj cetveli yazildi : {cikti}")
 
     if args.json:
