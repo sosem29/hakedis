@@ -89,10 +89,10 @@ function dosyaAdiTemiz(ad) {
 
 const TIP_RENKLER = {
   Kolon: "#e74c3c", Perde: "#8e44ad", Kiris: "#2980b9",
-  Doseme: "#7f8c8d", Merdiven: "#f39c12", Bosluk: "#95a5a6",
-  Kapi: "#16a085", Pencere: "#1abc9c", Bilinmeyen: "#bdc3c7",
+  Doseme: "#7f8c8d", Merdiven: "#f39c12", Duvar: "#d35400",
+  Bosluk: "#95a5a6", Kapi: "#16a085", Pencere: "#1abc9c", Bilinmeyen: "#bdc3c7",
 };
-const TIP_SIRA = ["Kolon", "Perde", "Kiris", "Doseme", "Merdiven", "Bosluk", "Kapi", "Pencere", "Bilinmeyen"];
+const TIP_SIRA = ["Kolon", "Perde", "Kiris", "Doseme", "Merdiven", "Duvar", "Bosluk", "Kapi", "Pencere", "Bilinmeyen"];
 
 const ALANLAR = [
   { yol: "birim", etiket: "Birim", tip: "select", secenekler: ["cm", "mm", "m"], panel: "hizli", bolum: "Genel" },
@@ -112,12 +112,12 @@ const ALANLAR = [
 });
 
 ["kolon_beton", "kolon_kalip", "perde_beton", "perde_kalip", "kiris_beton", "kiris_kalip",
- "doseme_beton", "doseme_kalip", "merdiven_beton", "merdiven_kalip", "demir",
+ "doseme_beton", "doseme_kalip", "merdiven_beton", "merdiven_kalip", "duvar", "duvar_siva", "demir",
  "kapi", "pencere", "siva", "siva_tavan", "kaplama"].forEach((p) => {
   ALANLAR.push({ yol: `pozlar.${p}`, etiket: `Poz — ${p.replace(/_/g, " ")}`, tip: "metin", panel: "tam", bolum: "Pozlar" });
 });
 
-["kolon", "perde", "kiris", "doseme", "merdiven", "bosluk", "kapi", "pencere", "metin", "yoksay"].forEach((k) => {
+["kolon", "perde", "kiris", "doseme", "merdiven", "duvar", "bosluk", "kapi", "pencere", "metin", "yoksay"].forEach((k) => {
   ALANLAR.push({ yol: `katmanlar.${k}`, etiket: `Katman — ${k} (regex, virgülle)`, tip: "liste", panel: "tam", bolum: "Katmanlar" });
 });
 
@@ -125,6 +125,9 @@ const ALANLAR = [
   { yol: "siva.aktif", etiket: "Sıva / badana (m²) — YAKLAŞIK", tip: "onay", panel: "tam", bolum: "Sıva/Kaplama" },
   { yol: "siva.yuzey_dusumu", etiket: "Sıva yüzey düşümü", tip: "number", adim: 0.05, panel: "tam", bolum: "Sıva/Kaplama" },
   { yol: "kaplama.aktif", etiket: "Döşeme kaplama + tesviye (m²) — YAKLAŞIK", tip: "onay", panel: "tam", bolum: "Sıva/Kaplama" },
+  { yol: "duvar.aktif", etiket: "Bölme duvar metrajı (m²) — YAKLAŞIK", tip: "onay", panel: "tam", bolum: "Duvar" },
+  { yol: "duvar.yukseklik", etiket: "Duvar yüksekliği H (m, 0 = kat yüksekliği)", tip: "number", adim: 0.05, panel: "tam", bolum: "Duvar" },
+  { yol: "duvar.siva_iki_yuz", etiket: "İki yüz duvar sıvası (2× alan)", tip: "onay", panel: "tam", bolum: "Duvar" },
   { yol: "kapi.aktif", etiket: "Kapı doğrulama listesi (adet)", tip: "onay", panel: "tam", bolum: "Doğrulama" },
   { yol: "pencere.aktif", etiket: "Pencere doğrulama listesi (adet)", tip: "onay", panel: "tam", bolum: "Doğrulama" },
 ].forEach((a) => ALANLAR.push(a));
@@ -562,6 +565,7 @@ function topluSatirEkle(girdiKayit) {
       <p class="birak-metin"><strong>Dosya seçin</strong> veya sürükleyin</p>
     </div>
     <label class="alan">Kat adı<input type="text" placeholder="3. Normal Kat"></label>
+    <label class="alan toplu-adet">Adet<input type="number" min="1" step="1" value="1"></label>
     <button class="toplu-sil" title="Kaldır">×</button>`;
   $("#toplu-dosyalar").appendChild(satir);
 
@@ -569,9 +573,11 @@ function topluSatirEkle(girdiKayit) {
   const birak = $(".toplu-birak", satir);
   const sil = $(".toplu-sil", satir);
   const kat = $("input[type=text]", satir);
+  const adet = $(".toplu-adet input", satir);
 
   if (girdiKayit) {
     kat.value = girdiKayit.kat || "";
+    if (girdiKayit.adet) adet.value = girdiKayit.adet;
     if (girdiKayit.ad) $(".birak-metin", birak).innerHTML = `<strong>${esc(girdiKayit.ad)}</strong>`;
   }
   birakAlaniYukle(birak, girdi, (f) => {
@@ -585,7 +591,11 @@ function topluSatirlariOku() {
   const satirlar = [];
   $$("#toplu-dosyalar .toplu-satir").forEach((r) => {
     const g = $("input[type=file]", r);
-    if (g.files[0]) satirlar.push({ dosya: g.files[0], kat: $("input[type=text]", r).value.trim() });
+    if (g.files[0]) satirlar.push({
+      dosya: g.files[0],
+      kat: $("input[type=text]", r).value.trim(),
+      adet: Math.max(1, parseInt($(".toplu-adet input", r).value, 10) || 1),
+    });
   });
   return satirlar;
 }
@@ -673,6 +683,7 @@ async function topluCalistir() {
   const fd = new FormData();
   katlar.forEach((k) => fd.append("dosyalar", k.dosya));
   fd.append("kat_adlari", JSON.stringify(katlar.map((k) => k.kat)));
+  fd.append("kat_adetleri", JSON.stringify(katlar.map((k) => k.adet)));
   fd.append("ayarlar", JSON.stringify(DURUM.yapilandirma));
   const ek = {
     olcek: $("#toplu-olcek").value,
@@ -958,14 +969,36 @@ function maliyetPozlari() {
   return pozlar.map((poz) => ({ poz, fiyat: fiyatlar[poz] ?? "", tanim: tanimlar[poz] || "" }));
 }
 
+function fiyatOnerisi(fiyatlar, poz) {
+  const degerler = Object.entries(fiyatlar).filter(([, v]) => v > 0);
+  if (!degerler.length) return null;
+  const onEk = poz.slice(0, 2);
+  let havuz = degerler.filter(([k]) => k.startsWith(onEk) && k !== poz).map(([, v]) => v);
+  if (!havuz.length) havuz = degerler.map(([, v]) => v);
+  havuz.sort((a, b) => a - b);
+  return havuz[Math.floor(havuz.length / 2)];
+}
+
 function maliyetFormuYenile() {
   const m = maliyetAyarlari();
-  const satirlar = maliyetPozlari().map((p) => `<tr>
-    <td class="sol">${esc(p.poz)}</td>
-    <td class="sol">${esc(p.tanim)}</td>
-    <td><input type="number" step="1" min="0" data-maliyet-fiyat="${esc(p.poz)}"
-      value="${p.fiyat === "" ? "" : p.fiyat}" placeholder="fiyat yok"></td>
-  </tr>`).join("");
+  const fiyatlar = m.poz_fiyatlari || {};
+  const satirlar = maliyetPozlari().map((p) => {
+    const dolu = p.fiyat !== "";
+    let fiyatHucresi = `<input type="number" step="1" min="0" data-maliyet-fiyat="${esc(p.poz)}"
+      value="${dolu ? p.fiyat : ""}" placeholder="fiyat yok">`;
+    if (!dolu) {
+      const oneri = fiyatOnerisi(fiyatlar, p.poz);
+      if (oneri !== null) {
+        fiyatHucresi += `<button type="button" class="fiyat-oneri" data-oner="${esc(p.poz)}"
+          data-fiyat="${oneri}" title="Benzer pozlardan tahmini fiyat (tek tıkla doldur)">öner ${sayiFormat(oneri, 0)}</button>`;
+      }
+    }
+    return `<tr>
+      <td class="sol">${esc(p.poz)}</td>
+      <td class="sol">${esc(p.tanim)}</td>
+      <td>${fiyatHucresi}</td>
+    </tr>`;
+  }).join("");
 
   $("#maliyet-form").innerHTML = `
     <div class="form-satir">
@@ -1014,6 +1047,15 @@ function maliyetFormuYenile() {
     g.addEventListener("input", () => {
       const n = parseFloat(g.value);
       m.poz_fiyatlari[g.dataset.maliyetFiyat] = Number.isFinite(n) && n > 0 ? n : 0;
+    });
+  });
+  $$("[data-oner]", $("#maliyet-form")).forEach((b) => {
+    b.addEventListener("click", () => {
+      const g = $(`[data-maliyet-fiyat="${b.dataset.oner}"]`, $("#maliyet-form"));
+      if (!g) return;
+      g.value = b.dataset.fiyat;
+      m.poz_fiyatlari[b.dataset.oner] = parseFloat(b.dataset.fiyat);
+      b.remove();
     });
   });
   $("#maliyet-hesapla").addEventListener("click", maliyetHesapla);
@@ -1073,9 +1115,23 @@ function maliyetHesapla() {
       <span>GENEL TOPLAM <b>${sayiFormat(toplam, 2)} ${esc(birim)}</b></span>
     </div>
     ${eksik.length ? `<div class="uyari-kutu"><div class="uyari-kutu-baslik">Fiyat tanımsız pozlar</div>
-      <ul>${eksik.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></div>` : ""}
-    <p class="maliyet-not">Birim fiyatlar ORNEKTIR; kesin bedel için güncel bakanlık birim fiyatlarını girin.</p>`;
+      <ul>${eksik.map((p) => {
+        const oneri = fiyatOnerisi(fiyatlar, p);
+        return `<li>${esc(p)}${oneri !== null
+          ? ` — öneri: <button type="button" class="fiyat-oneri" data-oner-sonuc="${esc(p)}" data-fiyat="${oneri}">${sayiFormat(oneri, 0)} (doldur)</button>`
+          : ""}</li>`;
+      }).join("")}</ul></div>` : ""}
+    <p class="maliyet-not">Birim fiyatlar ORNEKTIR; kesin bedel için güncel bakanlık birim fiyatlarını girin. "öneri" değerleri aynı poz ön ekindeki fiyatların medyanıdır.</p>`;
   alan.hidden = false;
+
+  $$("[data-oner-sonuc]", alan).forEach((b) => {
+    b.addEventListener("click", () => {
+      const m2 = maliyetAyarlari();
+      m2.poz_fiyatlari[b.dataset.onerSonuc] = parseFloat(b.dataset.fiyat);
+      maliyetFormuYenile();
+      maliyetHesapla();
+    });
+  });
 }
 
 /* ---------------- Baslangic ---------------- */

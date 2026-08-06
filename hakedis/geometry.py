@@ -165,6 +165,14 @@ def izdusum_parametresi(p: Nokta, seg: Segment) -> float:
     return (p.x - seg.baslangic.x) * ux + (p.y - seg.baslangic.y) * uy
 
 
+def nokta_segment_uzakligi(p: Nokta, seg: Segment) -> float:
+    """p noktasinin seg segmentine (sinirli) en kisa uzaklik."""
+    t = izdusum_parametresi(p, seg)
+    t = min(max(t, 0.0), seg.uzunluk)
+    q = parametreden_nokta(seg, t)
+    return p.mesafe(q)
+
+
 def parametreden_nokta(seg: Segment, t: float) -> Nokta:
     ux, uy = _birim(seg)
     return Nokta(seg.baslangic.x + ux * t, seg.baslangic.y + uy * t)

@@ -19,6 +19,7 @@ class ElemanTipi(str, Enum):
     PERDE = "Perde"
     KIRIS = "Kiris"
     DOSEME = "Doseme"
+    DUVAR = "Duvar"
     MERDIVEN = "Merdiven"
     BOSLUK = "Bosluk"
     KAPI = "Kapi"
@@ -32,6 +33,7 @@ class ElemanTipi(str, Enum):
             ElemanTipi.PERDE: "P",
             ElemanTipi.KIRIS: "K",
             ElemanTipi.DOSEME: "D",
+            ElemanTipi.DUVAR: "W",
             ElemanTipi.MERDIVEN: "M",
             ElemanTipi.BOSLUK: "B",
             ElemanTipi.KAPI: "KA",

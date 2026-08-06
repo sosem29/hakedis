@@ -385,7 +385,7 @@ def _toplu_isleri_hazirla(
 
 def komut_toplu(args) -> int:
     """Cok katli / cok paftali metraj: birden fazla dosya veya PDF sayfasi."""
-    from hakedis.metraj import plandan_metraj, sonuclari_birlestir
+    from hakedis.metraj import plandan_metraj, sonuclari_birlestir, sonuclari_cogalt
     from hakedis.report import excel_yaz_toplu, konsol_ozeti_toplu
 
     temel = _ayarlari_hazirla(args)
@@ -396,6 +396,17 @@ def komut_toplu(args) -> int:
         print(f"[toplu] {kat}: {dosya} ...", file=sys.stderr)
         sonuc, _ = plandan_metraj(dosya, ayarlar)
         sonuclar.append(sonuc)
+
+    adetler = _adet_listesi(args)
+    if any(a > 1 for a in adetler):
+        for i, s in enumerate(sonuclar):
+            a = adetler[i] if i < len(adetler) else 1
+            if a > 1:
+                print(
+                    f"[toplu] {s.kat} plani {a} katta tekrar ediyor.",
+                    file=sys.stderr,
+                )
+        sonuclar = sonuclari_cogalt(sonuclar, adetler)
 
     print(konsol_ozeti_toplu(sonuclar))
 
@@ -420,6 +431,21 @@ def komut_toplu(args) -> int:
         _toplu_json_yaz(sonuclar, Path(args.json))
         print(f"JSON ciktisi yazildi   : {args.json}")
     return 0
+
+
+def _adet_listesi(args) -> list[int]:
+    """--adet degerini dosya bazli adet listesine cevirir.
+
+    Tek sayi ("4") tum dosyalara uygulanir; virgullu degerler ("1,4,2")
+    sirayla dosyalara biner. Bos deger icin [1, 1, ...] dondurur.
+    """
+    ham = (getattr(args, "adet", "") or "").strip()
+    adet = int(ham) if ham.isdigit() else 1
+    parcalar = [int(p.strip()) for p in ham.split(",") if p.strip().isdigit()]
+    dosya_sayisi = len(getattr(args, "dosyalar", []) or [])
+    if parcalar:
+        return [(parcalar[i] if i < len(parcalar) else 1) for i in range(dosya_sayisi)]
+    return [adet] * dosya_sayisi
 
 
 def _toplu_json_yaz(sonuclar, hedef: Path) -> None:
@@ -525,6 +551,15 @@ Cok katli / cok paftali:
         help=(
             "Cok sayfali PDF icin sayfa-kat eslemesi, ornek: "
             "'1:Giris Kat,2:1.Normal Kat'"
+        ),
+    )
+    t.add_argument(
+        "--adet",
+        default="",
+        help=(
+            "Tekrar eden kat sayilari: her dosyanin kac katta gecerli oldugunu "
+            "verir (tek sayi tum dosyalara, virgulle ayri degerler dosya "
+            "bazinda). Ornek: --adet 4  veya  --adet '1,4,2'"
         ),
     )
     t.add_argument("--config", "-c", help="Ofis yapilandirma dosyasi (YAML)", default=None)

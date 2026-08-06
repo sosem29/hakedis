@@ -254,6 +254,38 @@ def _kiris_elemani(
     return e
 
 
+def _duvar_elemanlari(varliklar: list[HamVarlik], ayarlar: Ayarlar) -> list[Eleman]:
+    """Mimari planda cift paralel cizgi olarak cizilmis bolme duvarlarini bulur.
+
+    Kapali poligon duvarlar da kenarlarina ayrilir; paralel cizgi eslestirme
+    ikisini de kapsar. Duvar yuksekligi kattan kata tasiyici olmadigi icin
+    dogrudan tahmin edilemez; bu yuzden eleman guveni dusuk isaretlenir.
+    """
+    cizgiler: list[Segment] = []
+    for v in varliklar:
+        for k in kenarlar(v.noktalar, kapali=v.kapali):
+            cizgiler.append(k)
+    if not cizgiler:
+        return []
+
+    ciftler = paralel_cift_eksenleri(
+        cizgiler,
+        float(ayarlar.al("duvar.min_genislik", 0.10)),
+        float(ayarlar.al("duvar.max_genislik", 0.50)),
+        min_uzunluk=float(ayarlar.al("duvar.min_uzunluk", 0.30)),
+    )
+    katman = varliklar[0].katman
+    elemanlar: list[Eleman] = []
+    for eksen, genislik in ciftler:
+        e = Eleman(ad="", tip=ElemanTipi.DUVAR, kaynak_katman=katman)
+        e.segmentler = [eksen]
+        e.olculer["b"] = round(genislik, 4)
+        e.olculer["eksen_uzunlugu"] = round(eksen.uzunluk, 4)
+        e.guven = 0.6
+        elemanlar.append(e)
+    return elemanlar
+
+
 def _doseme_elemani(
     cevre: list[Nokta], katman: str, ayarlar: Ayarlar
 ) -> Eleman:
@@ -364,6 +396,18 @@ def elemanlari_tespit_et(
         katman = acik_kirisler[0].katman
         for eksen, genislik in ciftler:
             elemanlar.append(_kiris_elemani(eksen, genislik, katman, ayarlar))
+
+    # --- Duvar (bolme) ---------------------------------------------------
+    duvar_varliklari = gruplar.get("duvar", [])
+    if duvar_varliklari:
+        duvar_aktif = bool(ayarlar.al("duvar.aktif", False))
+        if duvar_aktif:
+            elemanlar.extend(_duvar_elemanlari(duvar_varliklari, ayarlar))
+        else:
+            uyarilar.append(
+                f"{len(duvar_varliklari)} duvar katmaninda varlik bulundu ancak "
+                f"'duvar.aktif' kapali oldugu icin metraja alinmadi."
+            )
 
     # --- Doseme -----------------------------------------------------------
     doseme_min = float(ayarlar.al("sezgisel.doseme_min_alan", 1.0))

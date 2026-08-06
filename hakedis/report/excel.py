@@ -145,11 +145,13 @@ def _sayfa_cetvel(wb: Workbook, sonuc: MetrajSonucu) -> None:
         ElemanTipi.KIRIS,
         ElemanTipi.DOSEME,
         ElemanTipi.MERDIVEN,
+        ElemanTipi.DUVAR,
         ElemanTipi.KAPI,
         ElemanTipi.PENCERE,
         ElemanTipi.BILINMEYEN,
     ]
     grup_baslik = {
+        ElemanTipi.DUVAR: "DUVAR (BOLME) METRAJI",
         ElemanTipi.KAPI: "KAPI-PENCERE METRAJI (DOGRAMA LISTESI)",
         ElemanTipi.PENCERE: "KAPI-PENCERE METRAJI (DOGRAMA LISTESI)",
         ElemanTipi.BILINMEYEN: "SIVA / KAPLAMA (BETONARME YUZEYLERI)",
@@ -324,6 +326,74 @@ def _sayfa_uyarilar(wb: Workbook, sonuc: MetrajSonucu) -> None:
         h.alignment = Alignment(wrap_text=True, vertical="top")
 
 
+def _sayfa_maliyet_ozet(wb: Workbook, m: dict | None) -> None:
+    """YIGS yaklasik maliyet ozet tutanagi (tek sayfa, ihale dokumani)."""
+    ws = wb.create_sheet("YIGS Ozet")
+    for harf, g in {"A": 34, "B": 14, "C": 16, "D": 60}.items():
+        ws.column_dimensions[harf].width = g
+    ws["A1"] = "YAKLASIK MALIYET OZET TUTANAGI"
+    ws["A1"].font = Font(bold=True, size=14)
+
+    if m is None:
+        ws["A3"] = "Yaklasik maliyet devre disi."
+        return
+
+    ws.cell(row=3, column=1, value=f"Betonarme sinifi: {m.get('beton_sinifi', '?')}").font = Font(bold=True)
+    ws.cell(row=4, column=1, value=f"Para birimi: {m['para_birimi']}").font = Font(bold=True)
+    satir = 6
+    basliklar = [("Bolum", "A"), ("Kalem", "B"), ("Tutar", "C"), ("Aciklama", "D")]
+    for i, (ad, _h) in enumerate(basliklar, start=1):
+        h = ws.cell(row=satir, column=i, value=ad)
+        h.fill = BASLIK_DOLGU
+        h.font = BASLIK_YAZI
+        h.border = CERCEVE
+    satir += 1
+
+    bolumler: dict[str, list] = {}
+    for k in m["kalemler"]:
+        bolumler.setdefault(k["bolum"], []).append(k)
+
+    for bolum, kalemler in bolumler.items():
+        tutar = sum(k["tutar"] for k in kalemler)
+        ws.cell(row=satir, column=1, value=bolum).font = Font(bold=True, size=11)
+        ws.cell(row=satir, column=2, value=len(kalemler)).border = CERCEVE
+        ws.cell(row=satir, column=3, value=round(tutar, 2)).border = CERCEVE
+        ws.cell(row=satir, column=3).number_format = "0.00"
+        ws.cell(row=satir, column=4).value = "; ".join(
+            f"{k['poz']} {k['miktar']:g} {k['birim']}" for k in kalemler[:4]
+        ) + (" …" if len(kalemler) > 4 else "")
+        for c in range(1, 5):
+            ws.cell(row=satir, column=c).border = CERCEVE
+            ws.cell(row=satir, column=c).fill = GRUP_DOLGU
+        satir += 1
+
+    satir += 1
+    for ad, deger in [
+        ("ARA TOPLAM", m["ara_toplam"]),
+        (f"KDV (%{m['kdv_oran']:g})", m["kdv"]),
+        ("GENEL TOPLAM", m["genel_toplam"]),
+    ]:
+        ws.cell(row=satir, column=1, value=ad).font = TOPLAM_YAZI
+        h = ws.cell(row=satir, column=3, value=round(deger, 2))
+        h.font = TOPLAM_YAZI
+        h.number_format = "0.00"
+        for c in range(1, 5):
+            ws.cell(row=satir, column=c).border = CERCEVE
+        satir += 1
+
+    if m["fiyatsiz_pozlar"]:
+        satir += 1
+        ws.cell(
+            row=satir, column=1,
+            value="Fiyat tanimsiz pozlar (hesaba dahil degil): "
+            + ", ".join(m["fiyatsiz_pozlar"]),
+        ).font = UYARI_YAZI
+    satir += 1
+    ws.cell(row=satir, column=1, value=m["not"]).alignment = Alignment(
+        wrap_text=True, vertical="top"
+    )
+
+
 def _sayfa_maliyet(
     wb: Workbook, sonuc: MetrajSonucu, m: dict | None
 ) -> None:
@@ -456,9 +526,12 @@ def excel_yaz(
         from hakedis.maliyet import maliyet_hesapla
 
         if ayarlar.al("maliyet.aktif", False):
-            _sayfa_maliyet(wb, sonuc, maliyet_hesapla(sonuc, ayarlar))
+            m = maliyet_hesapla(sonuc, ayarlar)
+            _sayfa_maliyet(wb, sonuc, m)
+            _sayfa_maliyet_ozet(wb, m)
         else:
             _sayfa_maliyet(wb, sonuc, None)
+            _sayfa_maliyet_ozet(wb, None)
 
     hedef.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(hedef))
@@ -631,10 +704,13 @@ def excel_yaz_toplu(
     _sayfa_uyarilar(wb, birlesik)
     if ayarlar is not None:
         if ayarlar.al("maliyet.aktif", False):
-            _sayfa_maliyet(wb, birlesik, maliyet_hesapla(birlesik, ayarlar))
+            m = maliyet_hesapla(birlesik, ayarlar)
+            _sayfa_maliyet(wb, birlesik, m)
             _sayfa_maliyet_kat(wb, sonuclar, ayarlar)
+            _sayfa_maliyet_ozet(wb, m)
         else:
             _sayfa_maliyet(wb, birlesik, None)
+            _sayfa_maliyet_ozet(wb, None)
 
     hedef.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(hedef))

@@ -30,6 +30,9 @@ kat:
   kiris_yuksekligi: 0.50
   # Varsayilan perde kalinligi (geometriden okunamazsa), m
   perde_kalinligi: 0.25
+  # Betonarme sinifi (maliyette beton pozlarina uygulanir). Girilecek degerler
+  # maliyet.beton_siniflari altinda tanimli olmalidir.
+  beton_sinifi: "C25/30"
 
 # --- Merdiven ----------------------------------------------------------------
 # Merdiven metraji plan izdusumunden alinir; egim katsayisi istenirse burada
@@ -80,6 +83,13 @@ katmanlar:
     - 'ŞAFT'
     - 'ASANSOR'
     - 'ASANSÖR'
+  duvar:
+    - '^DUVAR'
+    - '^DIVAR'
+    - '^WALL'
+    - '^BRICK'
+    - '^TUGLA'
+    - '^TUĞLA'
   merdiven:
     - '^MERDIVEN'
     - '^MERDİVEN'
@@ -197,6 +207,22 @@ kaplama:
   tesviye_poz: "23.062/T"
   seramik_poz: "23.062/S"
 
+# --- Bolme duvari (mimari plandan) ------------------------------------------
+# Yapici olmayan bolme duvarlari (tugla/bims) katman cizgilerinden (cift
+# paralel cizgi) cikarilir. Kapi/pencere bosluklari duvar alanindan dusulur.
+# Sadece mimari plan katmanlarinda calisir; betonarme kalip planinda yoktur.
+duvar:
+  aktif: false
+  # Duvar yuksekligi (m). 0 verilirse net kat yuksekligi kullanilir.
+  yukseklik: 0
+  # Paralel cizgi eslemede gecerli duvar kalinligi araligi (m)
+  min_genislik: 0.10
+  max_genislik: 0.50
+  # Bosluk dusumunde kapi/pencere merkezinin duvar eksenine azami uzakligi (m)
+  bosluk_arama_yaricapi: 0.60
+  # duvar.aktif iken siva.aktif da aciksa her iki yuz siva eklenir (2 x alan)
+  siva_iki_yuz: true
+
 # --- Doseme tipleri ----------------------------------------------------------
 # Kalip planindaki doseme sirasiyla hangi sisteme ait? Bu bilgi beton
 # hacmine uygulanan ek kurallari belirler. "normal" disindaki tiplerde
@@ -265,6 +291,8 @@ pozlar:
   siva: "21.061"
   siva_tavan: "21.071"
   kaplama: "23.062/S"
+  duvar: "21.121"
+  duvar_siva: "21.061"
   # Yaklasik donati metraji icin tek poz (katsayi esasli)
   demir: "18.001"
 
@@ -284,6 +312,21 @@ maliyet:
   #   fiyatlar_yolu: birim_fiyatlar.yml
   #   -> "16.058/1-K": 4900
   fiyatlar_yolu: ""
+  # Betonarme sinifina gore beton pozlarina ozel fiyat ezmeleri. Aktif sinif
+  # `kat.beton_sinifi` ile secilir; secilen siniftaki fiyatlar genel
+  # poz_fiyatlari'nin ustune biner. "16." on ekli beton pozlarina uygulanir.
+  # Sadece sinif icin ayni m3 fiyati gecerse tek anahtar yeterli:
+  #   beton_siniflari:
+  #     C25/30:
+  #       "16.058/1-K": 4200
+  #       "16.058/1-D": 4300
+  #     C30/37:
+  #       "16.058/1-K": 4500
+  #       "16.058/1-D": 4600
+  beton_siniflari:
+    C25/30: {}
+    C30/37: {}
+    C35/45: {}
   # Poz -> birim fiyat (TL). Poz numaralari ustteki pozlar ile eslesir.
   poz_fiyatlari:
     "16.058/1-K": 4200

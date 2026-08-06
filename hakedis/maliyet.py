@@ -38,7 +38,13 @@ def _bolum(poz: str) -> str:
 
 
 def fiyat_sozlugu(ayarlar: Ayarlar) -> dict[str, float]:
-    """Birim fiyat veritabanini tek sozlukte birlestirir (config oncelikli)."""
+    """Birim fiyat veritabanini tek sozlukte birlestirir.
+
+    Oncelik (ustteki biner):
+      1. `maliyet.fiyatlar_yolu` dosyasi (birim_fiyatlar.yml)
+      2. `maliyet.poz_fiyatlari`
+      3. secili beton sinifi ezmeleri `maliyet.beton_siniflari.<sinif>`
+    """
     birlestik: dict[str, float] = {}
     yol = str(ayarlar.al("maliyet.fiyatlar_yolu", "") or "").strip()
     if yol:
@@ -61,12 +67,36 @@ def fiyat_sozlugu(ayarlar: Ayarlar) -> dict[str, float]:
             birlestik[str(k)] = float(v)
         except (TypeError, ValueError):  # pragma: no cover
             continue
+    sinif = str(ayarlar.al("kat.beton_sinifi", "C25/30") or "C25/30")
+    for k, v in (ayarlar.al(f"maliyet.beton_siniflari.{sinif}", {}) or {}).items():
+        try:
+            birlestik[str(k)] = float(v)
+        except (TypeError, ValueError):  # pragma: no cover
+            continue
     return birlestik
+
+
+def _fiyat_onerisi(fiyatlar: dict[str, float], poz: str) -> float | None:
+    """Fiyati olmayan poz icin benzer pozlardan tahmini birim fiyat.
+
+    Ayni iki haneli poz on ekindeki fiyatlarin medyani (yoksa tum fiyatlarin
+    medyani). YIGS'te "benzer poz bulunamadi" durumuna karsilik bir oneridir;
+    kesinlik degeri yoktur.
+    """
+    if not fiyatlar:
+        return None
+    on_ek = poz[:2]
+    benzer = sorted(
+        v for k, v in fiyatlar.items() if k.startswith(on_ek) and k != poz
+    )
+    havuz = benzer or sorted(fiyatlar.values())
+    return round(havuz[len(havuz) // 2], 2)
 
 
 def maliyet_hesapla(sonuc: MetrajSonucu, ayarlar: Ayarlar) -> dict:
     """Metraj sonucuna poz fiyatlarini uygulayarak maliyet tablosu uretir."""
     fiyatlar = fiyat_sozlugu(ayarlar)
+    sinif = str(ayarlar.al("kat.beton_sinifi", "C25/30") or "C25/30")
     kalemler: list[dict] = []
     fiyatli_pozlar: set[str] = set()
 
@@ -81,10 +111,14 @@ def maliyet_hesapla(sonuc: MetrajSonucu, ayarlar: Ayarlar) -> dict:
         tutar = miktar * fiyat
         if abs(tutar) < 1e-9:
             continue
+        beton_sinifi = sinif if s.poz.startswith("16.") else ""
+        tanim = s.tanim
+        if beton_sinifi:
+            tanim = f"{tanim} ({beton_sinifi})"
         kalemler.append(
             {
                 "poz": s.poz,
-                "tanim": s.tanim,
+                "tanim": tanim,
                 "eleman": s.eleman_adi,
                 "birim": s.birim,
                 "miktar": miktar,
@@ -92,6 +126,7 @@ def maliyet_hesapla(sonuc: MetrajSonucu, ayarlar: Ayarlar) -> dict:
                 "tutar": tutar,
                 "dusum": s.dusum_mu,
                 "bolum": _bolum(s.poz),
+                "sinif": beton_sinifi,
             }
         )
 
@@ -110,11 +145,17 @@ def maliyet_hesapla(sonuc: MetrajSonucu, ayarlar: Ayarlar) -> dict:
         "aktif": bool(ayarlar.al("maliyet.aktif", False)),
         "para_birimi": str(ayarlar.al("maliyet.para_birimi", "TL")),
         "kdv_oran": kdv_oran,
+        "beton_sinifi": sinif,
         "kalemler": kalemler,
         "ara_toplam": ara_toplam,
         "kdv": kdv,
         "genel_toplam": genel_toplam,
         "fiyatsiz_pozlar": eksik,
+        "fiyat_onerileri": {
+            p: _fiyat_onerisi(fiyatlar, p)
+            for p in eksik
+            if _fiyat_onerisi(fiyatlar, p) is not None
+        },
         "not": (
             "Birim fiyatlar ORNEKTIR. Kesin bedel icin guncel bakanlik/il "
             "birim fiyatlarini 'Maliyet' bolumune veya birim_fiyatlar.yml "

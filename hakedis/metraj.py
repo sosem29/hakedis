@@ -13,6 +13,7 @@ Istege bagli ek kalemler (yapilandirma ile acilir):
 
 from __future__ import annotations
 
+import copy
 import math
 
 from hakedis.config import Ayarlar
@@ -22,6 +23,7 @@ from hakedis.geometry import (
     kiris_ayak_izi,
     net_kalip_alani,
     nokta_icinde_mi,
+    nokta_segment_uzakligi,
     poligonu_shapelye,
     segment_poligon_kesisim_uzunlugu,
 )
@@ -410,6 +412,96 @@ def _kiris_satirlari(e: Eleman, ayarlar: Ayarlar) -> list[KirikOlcuSatiri]:
 # ---------------------------------------------------------------------------
 # Doseme
 # ---------------------------------------------------------------------------
+
+
+def _duvar_satirlari(
+    e: Eleman, ayarlar: Ayarlar, acikliklar: list[Eleman]
+) -> list[KirikOlcuSatiri]:
+    """Bolme duvari: kalip planindan TAHMINI metraj.
+
+    Duvar yuksekligi plan okumasiyla bilinemez; 'duvar.yukseklik' ile
+    verilir (0 ise kat yuksekligi varsayilir). Kapi/pencere acikliklari
+    duvar eksenine yakinlarsa net alandan dusulur.
+    """
+    kalinlik = e.olculer.get("b", float(ayarlar.al("duvar.kalinlik", 0.15) or 0.15))
+    h = float(ayarlar.al("duvar.yukseklik", 0.0) or 0.0)
+    if h <= 0.0:
+        h = float(ayarlar.al("kat.kat_yuksekligi", 3.0) or 3.0)
+    eksen_uzunluk = e.olculer.get("eksen_uzunlugu", 0.0)
+    kat = e.kat
+
+    brut = eksen_uzunluk * h
+    detay = [
+        f"Duvar eksen boyu L = {eksen_uzunluk:.3f} m, kalinlik b = {kalinlik:.2f} m",
+        f"Yukseklik H = {h:.2f} m (plan okunamadigi icin yapilandirmadan)",
+        f"Brut alan = {eksen_uzunluk:.3f} x {h:.2f} = {brut:.4f} m2",
+    ]
+
+    yaricap = float(ayarlar.al("duvar.bosluk_arama_yaricapi", 0.60) or 0.60)
+    bosluk_alani = 0.0
+    eksen = e.segmentler[0] if e.segmentler else None
+    dusulen: list[str] = []
+    for a in acikliklar:
+        en = float(a.olculer.get("en", 0.9) or 0.9)
+        boy = float(a.olculer.get("boy", 2.2) or 2.2)
+        if eksen is not None and nokta_segment_uzakligi(a.merkez, eksen) > yaricap:
+            continue
+        bosluk_alani += en * boy
+        dusulen.append(f"{a.tip.value} {a.ad} ({en * 100:.0f}x{boy * 100:.0f} cm)")
+    net = max(brut - bosluk_alani, 0.0)
+    if dusulen:
+        detay.append("Bosluk dusumu (duvar eksenine yakin acikliklar):")
+        for d in dusulen:
+            detay.append(f"  (-) {d}")
+        detay.append(f"Net alan = {brut:.4f} - {bosluk_alani:.4f} = {net:.4f} m2")
+
+    e.olculer["brut_alan"] = _y(brut, 4)
+    e.olculer["bosluk_alani"] = _y(bosluk_alani, 4)
+    e.olculer["net_alan"] = _y(net, 4)
+    e.olculer["duvar_h"] = _y(h)
+
+    satirlar = [
+        KirikOlcuSatiri(
+            poz=ayarlar.poz("duvar"),
+            eleman_adi=e.ad,
+            tip=ElemanTipi.DUVAR,
+            tanim=(
+                f"Bolme duvari b={kalinlik:.2f} m, H={h:.2f} m "
+                f"(plan okunamadigi icin tahmini)"
+            ),
+            benzer=1,
+            alan=_y(net, 4),
+            yukseklik=_y(h),
+            birim="m2",
+            formul=(
+                f"L={eksen_uzunluk:.3f} m x H={h:.2f} m"
+                + (f" - bosluk {bosluk_alani:.3f} m2" if bosluk_alani > 0 else "")
+            ),
+            kat=kat,
+            detay=detay,
+        )
+    ]
+
+    iki_yuz = bool(ayarlar.al("duvar.siva_iki_yuz", True))
+    e.olculer["siva_iki_yuz"] = iki_yuz
+    if iki_yuz and net > 0:
+        siva = 2.0 * net
+        satirlar.append(
+            KirikOlcuSatiri(
+                poz=ayarlar.poz("duvar_siva"),
+                eleman_adi=e.ad,
+                tip=ElemanTipi.DUVAR,
+                tanim="Iki yuz bolme duvari sivasi (2 x duvar alani)",
+                benzer=1,
+                alan=_y(siva, 4),
+                yukseklik=_y(h),
+                birim="m2",
+                formul=f"2 x {net:.3f} m2 = {siva:.3f} m2",
+                kat=kat,
+                detay=detay + [f"Siva alani = 2 x {net:.4f} = {siva:.4f} m2"],
+            )
+        )
+    return satirlar
 
 
 def _doseme_satirlari(
@@ -810,8 +902,9 @@ def metraj_hesapla(
         ElemanTipi.KIRIS: 2,
         ElemanTipi.DOSEME: 3,
         ElemanTipi.MERDIVEN: 4,
-        ElemanTipi.KAPI: 5,
-        ElemanTipi.PENCERE: 6,
+        ElemanTipi.DUVAR: 5,
+        ElemanTipi.KAPI: 6,
+        ElemanTipi.PENCERE: 7,
     }
     for e in sorted(elemanlar, key=lambda x: (sira.get(x.tip, 9), x.ad)):
         if e.tip == ElemanTipi.KOLON:
@@ -824,6 +917,13 @@ def metraj_hesapla(
             satirlar.extend(_doseme_satirlari(e, ayarlar, kirisler, mesnetler))
         elif e.tip == ElemanTipi.MERDIVEN:
             satirlar.extend(_merdiven_satirlari(e, ayarlar))
+        elif e.tip == ElemanTipi.DUVAR:
+            acikliklar = [
+                x
+                for x in elemanlar
+                if x.tip in (ElemanTipi.KAPI, ElemanTipi.PENCERE)
+            ]
+            satirlar.extend(_duvar_satirlari(e, ayarlar, acikliklar))
 
     satirlar.extend(_dogrular_satirlari(elemanlar, ayarlar))
     ek = _siva_kaplama_satirlari(satirlar, ayarlar)
@@ -885,6 +985,30 @@ def plandan_metraj(
     sonuc = metraj_hesapla(elemanlar, ayarlar, uyarilar)
     sonuc.kaynak_dosya = str(dosya)
     return sonuc, cizim
+
+
+def sonuclari_cogalt(
+    sonuclar: list[MetrajSonucu], adetler: list[int]
+) -> list[MetrajSonucu]:
+    """Ayni planin tekrarlandigi katlari ayri kat satirlarina acar.
+
+    Ornegin "Zemin" plani 4 kat icin gecerliyse `sonuclari_cogalt([z], [4])`
+    "Zemin (1/4)..(4/4)" adinda dort ayri kat sonucu uretir; her biri kendi
+    metraj/maliyet satirlarini tasir (tekrarlanan kat esit oldugu icin ozdeştir).
+    """
+    genisletilmis: list[MetrajSonucu] = []
+    for i, sonuc in enumerate(sonuclar):
+        adet = max(1, int(adetler[i]) if i < len(adetler) and adetler[i] else 1)
+        for n in range(1, adet + 1):
+            kopya = copy.deepcopy(sonuc)
+            if adet > 1:
+                kopya.kat = f"{sonuc.kat} ({n}/{adet})"
+                for s in kopya.satirlar:
+                    s.kat = kopya.kat
+                for e in kopya.elemanlar:
+                    e.kat = kopya.kat
+            genisletilmis.append(kopya)
+    return genisletilmis
 
 
 def sonuclari_birlestir(sonuclar: list[MetrajSonucu]) -> MetrajSonucu:

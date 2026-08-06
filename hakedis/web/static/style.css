@@ -291,11 +291,19 @@ table.metraj tr.toplam td { background: #eaf3fc; font-weight: 800; border-top: 2
 }
 .toplu-satir .birak-alani { flex: 1; padding: 14px 12px; }
 .toplu-satir .alan { flex: 1; }
+.toplu-satir .toplu-adet { flex: 0 0 84px; text-align: center; }
+.toplu-satir .toplu-adet input { text-align: center; }
 .toplu-sil {
   border: none; background: transparent; color: var(--hata);
   font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 6px;
 }
 .toplu-sil:hover { background: var(--hata-zemin); }
+.fiyat-oneri {
+  margin-left: 6px; border: 1px dashed var(--vurgu, #2c7be5); color: #1f5aa8;
+  background: #f0f6ff; border-radius: 5px; padding: 3px 8px;
+  font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.fiyat-oneri:hover { background: #dcecff; }
 
 /* ---------------- Ayarlar ---------------- */
 .ayarlar-arac {

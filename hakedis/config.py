@@ -124,6 +124,7 @@ class Ayarlar:
             "perde",
             "kiris",
             "doseme",
+            "duvar",
             "kapi",
             "pencere",
             "metin",

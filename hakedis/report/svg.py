@@ -26,6 +26,7 @@ RENKLER: dict[ElemanTipi, tuple[str, str]] = {
     ElemanTipi.KIRIS: ("#2980b9", "#1a5276"),
     ElemanTipi.DOSEME: ("#95a5a6", "#5d6d7e"),
     ElemanTipi.MERDIVEN: ("#f39c12", "#9c640c"),
+    ElemanTipi.DUVAR: ("#d35400", "#a04000"),
     ElemanTipi.BOSLUK: ("#ffffff", "#7f8c8d"),
     ElemanTipi.BILINMEYEN: ("#bdc3c7", "#7f8c8d"),
 }
@@ -81,11 +82,20 @@ def _eleman_cizimi(d: _Donusum, e: Eleman) -> list[str]:
                 f'stroke="{dolgu}" stroke-width="{max(b * d.olcek, 2.0):.2f}" '
                 f'stroke-opacity="0.45" stroke-linecap="butt" />'
             )
+    elif e.tip == ElemanTipi.DUVAR:
+        b = e.olculer.get("b", 0.15)
+        for s in e.segmentler:
+            parcalar.append(
+                f'<line x1="{d.x(s.baslangic.x):.2f}" y1="{d.y(s.baslangic.y):.2f}" '
+                f'x2="{d.x(s.bitis.x):.2f}" y2="{d.y(s.bitis.y):.2f}" '
+                f'stroke="{dolgu}" stroke-width="{max(b * d.olcek, 2.0):.2f}" '
+                f'stroke-opacity="0.55" stroke-linecap="butt" />'
+            )
     else:
         parcalar.append(_poligon(d, e.cevre, dolgu, kenar, 0.55, 1.2))
 
     # Kirik olcu ekseni (perde ve kiris icin)
-    if e.tip in (ElemanTipi.PERDE, ElemanTipi.KIRIS):
+    if e.tip in (ElemanTipi.PERDE, ElemanTipi.KIRIS, ElemanTipi.DUVAR):
         for s in e.segmentler:
             parcalar.append(
                 f'<line x1="{d.x(s.baslangic.x):.2f}" y1="{d.y(s.baslangic.y):.2f}" '

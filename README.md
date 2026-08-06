@@ -29,6 +29,7 @@ K101   Beam concrete 0.25/0.50         0.998 m3   b=0.25 x (h-t)=0.35 x L=11.400
 | **Slab** | Shoelace area from corner coordinates, openings deducted | Concrete `A×t`, table formwork − (beam+column+wall footprint **union**) |
 | **Stair** | Closed plan footprint | Concrete `A×k×t`, formwork `A×k` — `k` from riser/tread or explicit |
 | **Door / Window** | Drawing labels (`KD101`, `P101`, `90x220`) | Joinery count per size (`adet`) — a doğrama listesi line per unique opening |
+| **Partition wall** | Pairs of parallel lines on an architectural layer (`duvar.aktif`) | Wall `L×H` minus door/window openings (per-pair approximation); optional 2-face plaster |
 
 Optional rules (enabled via config):
 
@@ -42,6 +43,16 @@ Optional rules (enabled via config):
   quantities (approximate — flagged in the output).
 - **Floor covering (m²):** with `kaplama.aktif`, screed + ceramic lines are
   derived from the net slab area (approximate).
+- **Concrete-class pricing:** pick the floor class via `kat.beton_sinifi`
+  (`C25/30`, `C30/37`, `C35/45`); prices are read from `maliyet.beton_siniflari.<sınıf>`
+  and stamped on concrete item descriptions.
+- **Price suggestions:** any item with no unit price gets a suggested price
+  (median of same two-digit-prefix prices); the web UI fills it in one click.
+- **Repeated floors:** `--adet` (CLI) or the per-file "Adet" field (web *Toplu*)
+  multiplies a plan into `Kat (1/4) … (4/4)` line items, each with its own
+  quantities and costs.
+- **YİGŞ cost summary sheet:** every Excel export gets a "YIGS Ozet" sheet with
+  per-section totals (item count, amount, KDV, grand total).
 - **Approximate cost:** multiply measured quantities by ministry/item-rate unit
   prices to produce a bill of quantities and an estimate with KDV, laid out in
   a tender-ready (YİGŞ-style) order: running number, item no, description,
@@ -100,6 +111,9 @@ hakedis metraj plan.dwg --config ofis.yml \
 # 5. Multi-storey / multi-sheet work
 hakedis toplu gir.dxf kat1.dxf kat2.dxf \
     --kat-adlari "Giris Kat" "1. Normal Kat" "2. Normal Kat"
+# tekrarlanan kat: tek sayi tum dosyalara, virgullu liste dosya bazina biner
+hakedis toplu plan.pdf --adet 4
+hakedis toplu zemin.pdf 1kat.pdf --adet "4,2"
 hakedis toplu plan.pdf --paftalar "1:Giris,2:1.Kat,3:2.Kat" --config ofis.yml
 ```
 

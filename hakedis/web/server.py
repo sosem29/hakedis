@@ -311,6 +311,7 @@ async def metraj(
 async def toplu(
     dosyalar: list[UploadFile] = File(...),
     kat_adlari: str | None = Form(None),
+    kat_adetleri: str | None = Form(None),
     ayarlar: str | None = Form(None),
     yaml: str | None = Form(None),
     kat_yuksekligi: str | None = Form(None),
@@ -319,7 +320,7 @@ async def toplu(
     olcek: str | None = Form(None),
     kalibre: str | None = Form(None),
 ) -> dict:
-    from hakedis.metraj import plandan_metraj
+    from hakedis.metraj import plandan_metraj, sonuclari_cogalt
 
     if not dosyalar:
         raise HTTPException(422, "En az bir dosya yukleyin.")
@@ -339,6 +340,13 @@ async def toplu(
         except json.JSONDecodeError:
             adlar = [p.strip() for p in kat_adlari.split(",") if p.strip()]
 
+    adetler: list[int] = []
+    if kat_adetleri:
+        try:
+            adetler = [max(1, int(a)) for a in json.loads(kat_adetleri)]
+        except (json.JSONDecodeError, TypeError, ValueError):
+            adetler = []
+
     sonuclar = []
     gecici: list[str] = []
     try:
@@ -353,6 +361,9 @@ async def toplu(
     finally:
         for yol in gecici:
             Path(yol).unlink(missing_ok=True)
+
+    if adetler:
+        sonuclar = sonuclari_cogalt(sonuclar, adetler)
 
     from hakedis.maliyet import maliyet_hesapla
     from hakedis.metraj import sonuclari_birlestir
