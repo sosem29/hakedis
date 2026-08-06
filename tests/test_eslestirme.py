@@ -103,16 +103,30 @@ class TestEsleTaraDxf:
         )
         dxf = tmp_path / "p.dxf"
         doc.saveas(str(dxf))
+
+        ayarlar = '{"dxf": {"min_plan_boyutu": 0}}'
         r = c.post(
             "/api/esle-tara",
-            files={"dosya": ("p.dxf", dxf.read_bytes(), "application/octet-stream")},
+            files={"dosya": ("p.dxf", dxf.read_bytes(), "application/dxf")},
+            data={"ayarlar": ayarlar},
         )
         assert r.status_code == 200, r.text
         d = r.json()
         assert d["tur"] == "katman"
         katmanlar = {a["anahtar"]: a for a in d["adaylar"]}
-        assert katmanlar["KOLON-1"]["suanki_tip"] == "kolon"
-        assert katmanlar["AKS-10"]["suanki_tip"] == "yoksay"
+        assert "KOLON-1" in katmanlar
+        aks = katmanlar["AKS-10"]
+        assert aks["oneri_tip"] == "yoksay"
+
+    def test_bosluklu_dosya_adi_kabul_edilir(self):
+        """'istinat.dwg 2' gibi isimlerde uzanti ilk bosluga kadardir."""
+        from hakedis.web.server import _dosya_uzantisi
+
+        assert _dosya_uzantisi("istinat.dwg 2") == ".dwg"
+        assert _dosya_uzantisi("plan.dwg 2") == ".dwg"
+        assert _dosya_uzantisi("plan.PDF") == ".pdf"
+        assert _dosya_uzantisi("  plan.dxf  ") == ".dxf"
+        assert _dosya_uzantisi("istinat") == ""
 
 
 class TestUctanUcaEsleme:

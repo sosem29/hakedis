@@ -148,8 +148,14 @@ etiket:
     kalinlik:
       - '(?:TD|KAL|T|H)\s*[=:]\s*(?P<t>\d{1,3}(?:[.,]\d+)?)'
       # "P1 25", "P12 (30)" -> perde adi + kalinligi
-      - '^(?P<ad>[PD][-_ ]?\d{1,3}[A-Za-z]?)\s*[\(\[]?\s*(?P<t>\d{1,3}(?:[.,]\d+)?)\s*[\)\]]?$'
-      - '(?P<ad>D\d{1,3})\s*[\(\[]?\s*(?P<t>\d{1,3}(?:[.,]\d+)?)\s*[\)\]]?'
+      # "P1 25", "P12 (30)" -> perde adi + kalinligi. Kalinlik ayirici
+      # (bosluk/parantez) ZORUNLUDUR; yoksa "D101" icinde D10+1 geri sarmali
+      # yanlis t=0.01 uretilir.
+      - '^(?P<ad>[PD][-_ ]?\d{1,3}[A-Za-z]?)(?:\s+|\s*\(\s*|\s*\[\s*)(?P<t>\d{1,3}(?:[.,]\d+)?)\s*[\)\]]?$'
+      # Doseme etiketi sonrasinda AYRI yazilmis kalinlik: "D101 20cm", "D12 (15)".
+      # Boşluk/parantez zorunludur; aksi halde "5 D101" gibi metinlerde D10+1
+      # geri sarmali yanlis t=0.01 uretiliyor.
+      - '(?P<ad>D[-_ ]?\d{1,4})(?:\s+|\s*\(\s*)(?P<t>\d{1,3}(?:[.,]\d+)?)\s*\)?'
     ad:
       - '^(?P<ad>[SKPD][-_ ]?\d{1,4}[A-Za-z]?)$'
 

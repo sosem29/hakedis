@@ -114,9 +114,22 @@ def _katman_onerisi(katman_adi: str) -> str | None:
     return None
 
 
+def _dosya_uzantisi(ad: str) -> str:
+    """Dosya adindan uzantiyi ayiklar (bosluk sonrasi ekleri yok sayar).
+
+    'istinat.dwg 2' gibi isimlerde Path.suffix '.dwg 2' doner; gercek
+    uzanti ilk bosluga kadardir.
+    """
+    ad = (ad or "").strip()
+    son_dot = ad.rfind(".")
+    if son_dot == -1:
+        return ""
+    return ad[son_dot:].split()[0].lower()
+
+
 async def _kaydet(dosya: UploadFile) -> str:
     """Yuklenen dosyayi gecici bir yola yazar, yolunu dondurur."""
-    uzanti = Path(dosya.filename or "").suffix.lower()
+    uzanti = _dosya_uzantisi(dosya.filename or "")
     if uzanti not in (".dwg", ".dxf", ".pdf"):
         raise HTTPException(
             422,
@@ -384,7 +397,7 @@ async def esle_tara(
         ayarlar_nesnesi.ham.setdefault("pdf", {})["sayfa"] = sayfa_no
 
     yol = await _kaydet(dosya)
-    uzanti = Path(dosya.filename or yol).suffix.lower()
+    uzanti = _dosya_uzantisi(dosya.filename or yol)
     try:
         if uzanti == ".pdf":
             adaylar = renk_esleme_adaylari(yol, sayfa_no or 1)

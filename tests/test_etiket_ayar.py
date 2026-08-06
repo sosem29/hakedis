@@ -46,6 +46,21 @@ class TestEtiketAyristirma:
         assert et.ad == "P1"
         assert et.t == pytest.approx(0.25)
 
+    def test_doseme_adi_ve_kalinligi(self, ayarlar):
+        et = etiket_ayristir("D101 20cm", ayarlar)
+        assert et.ad == "D101"
+        assert et.t == pytest.approx(0.20)
+
+        et2 = etiket_ayristir("D12 (15)", ayarlar)
+        assert et2.ad == "D12"
+        assert et2.t == pytest.approx(0.15)
+
+    def test_doseme_etiketi_yanlis_kalinlik_okumaz(self, ayarlar):
+        """'5 D101' gibi bitisik rastgele haneler kalinlik sayilmamali."""
+        for metin in ("5 D101", "D101", "186.2 D107"):
+            et = etiket_ayristir(metin, ayarlar)
+            assert et.t is None, f"{metin!r} icin yanlis t={et.t}"
+
     def test_sadece_ad(self, ayarlar):
         et = etiket_ayristir("S12", ayarlar)
         assert et.ad == "S12"
