@@ -27,6 +27,9 @@
       <button class="menu-ogesi" data-sekme="toplu">
         <span class="ikon">🗂️</span> Toplu Metraj
       </button>
+      <button class="menu-ogesi" data-sekme="maliyet">
+        <span class="ikon">💰</span> Maliyet
+      </button>
       <button class="menu-ogesi" data-sekme="pdf">
         <span class="ikon">🔍</span> PDF İncele
       </button>
@@ -199,6 +202,27 @@
             <p>Kat dosyalarınızı ekleyin.</p>
             <p class="bos-alt">Her dosya bir kat olarak işlenir.</p>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================== MALİYET ============================ -->
+    <section id="sekme-maliyet" class="sekme">
+      <header class="sayfa-baslik">
+        <h1>Yaklaşık Maliyet</h1>
+        <p>Poz birim fiyatlarını girin (fiyatı olmayan pozlar için benzer pozlardan öneri gelir) ve metrajı YİGŞ düzeninde tutara çevirin.</p>
+      </header>
+      <div class="cift-sutun">
+        <div class="panel giris">
+          <div id="maliyet-form"></div>
+        </div>
+        <div class="panel sonuc">
+          <div id="maliyet-bos" class="bos-alani">
+            <div class="bos-ikon">💰</div>
+            <p>Maliyet tablosu burada görünecek.</p>
+            <p class="bos-alt">Önce Metraj veya Toplu sekmesinde bir metraj üretin, sonra fiyatları doldurup "Hesapla &amp; Göster" deyin.</p>
+          </div>
+          <div id="maliyet-sonuc" class="sonuc-alani" hidden></div>
         </div>
       </div>
     </section>

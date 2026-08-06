@@ -97,6 +97,7 @@ const TIP_SIRA = ["Kolon", "Perde", "Kiris", "Doseme", "Merdiven", "Duvar", "Bos
 const ALANLAR = [
   { yol: "birim", etiket: "Birim", tip: "select", secenekler: ["cm", "mm", "m"], panel: "hizli", bolum: "Genel" },
   { yol: "donati.aktif", etiket: "Yaklaşık demir (kg) hesabı", tip: "onay", panel: "hizli", bolum: "Donatı" },
+  { yol: "maliyet.aktif", etiket: "Maliyet (YİGŞ tutar)", tip: "onay", panel: "hizli", bolum: "Maliyet" },
   { yol: "doseme.tip", etiket: "Döşeme tipi", tip: "select", secenekler: ["normal", "guseli", "mantar"], panel: "hizli", bolum: "Döşeme" },
   { yol: "doseme.guseli_hacim_katsayisi", etiket: "Guseli hacim katsayısı", tip: "number", adim: 0.05, panel: "tam", bolum: "Döşeme" },
   { yol: "doseme.mantar_kolon_ustu_artisi", etiket: "Mantar kolon üstü artışı (m)", tip: "number", adim: 0.01, panel: "tam", bolum: "Döşeme" },
@@ -122,6 +123,11 @@ const ALANLAR = [
 });
 
 [
+  { yol: "kat.beton_sinifi", etiket: "Beton sınıfı (beton pozlarına damgalanır)", tip: "select", secenekler: ["C25/30", "C30/37", "C35/45"], panel: "tam", bolum: "Kat" },
+  { yol: "maliyet.aktif", etiket: "Maliyet hesabı açık (metraj sonucuna YİGŞ eklenir)", tip: "onay", panel: "tam", bolum: "Maliyet" },
+  { yol: "maliyet.para_birimi", etiket: "Para birimi", tip: "metin", panel: "tam", bolum: "Maliyet" },
+  { yol: "maliyet.kdv_oran", etiket: "KDV oranı (%)", tip: "number", adim: 1, panel: "tam", bolum: "Maliyet" },
+  { yol: "maliyet.fiyatlar_yolu", etiket: "Birim fiyat dosyası (yml)", tip: "metin", panel: "tam", bolum: "Maliyet" },
   { yol: "siva.aktif", etiket: "Sıva / badana (m²) — YAKLAŞIK", tip: "onay", panel: "tam", bolum: "Sıva/Kaplama" },
   { yol: "siva.yuzey_dusumu", etiket: "Sıva yüzey düşümü", tip: "number", adim: 0.05, panel: "tam", bolum: "Sıva/Kaplama" },
   { yol: "kaplama.aktif", etiket: "Döşeme kaplama + tesviye (m²) — YAKLAŞIK", tip: "onay", panel: "tam", bolum: "Sıva/Kaplama" },
@@ -241,6 +247,7 @@ function sekmeAc(ad) {
   $$(".menu-ogesi").forEach((b) => b.classList.toggle("aktif", b.dataset.sekme === ad));
   $$(".sekme").forEach((s) => s.classList.toggle("aktif", s.id === `sekme-${ad}`));
   if (ad === "ayarlar") ayarlarFormuYenile();
+  else if (ad === "maliyet") maliyetFormuYenile();
   else if (ad === "metraj" || ad === "toplu") {
     hizliFormlariYenile();
     katAlanlariniYenile();
@@ -1123,6 +1130,8 @@ function maliyetHesapla() {
       }).join("")}</ul></div>` : ""}
     <p class="maliyet-not">Birim fiyatlar ORNEKTIR; kesin bedel için güncel bakanlık birim fiyatlarını girin. "öneri" değerleri aynı poz ön ekindeki fiyatların medyanıdır.</p>`;
   alan.hidden = false;
+  const bos = $("#maliyet-bos");
+  if (bos) bos.hidden = true;
 
   $$("[data-oner-sonuc]", alan).forEach((b) => {
     b.addEventListener("click", () => {
@@ -1145,6 +1154,7 @@ async function baslangicYukle() {
     hizliFormlariYenile();
     katAlanlariniYenile();
     ayarlarFormuYenile();
+    maliyetFormuYenile();
 
     const eksikler = d.bagimliliklar.filter((b) => !b.tamam);
     if (eksikler.length) {

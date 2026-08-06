@@ -358,8 +358,16 @@ submit it before reviewing the control sheet and the Warnings sheet.
 
 ```bash
 pip install -e ".[test]"
-pytest -q          # 137 tests: geometry, labels, end-to-end DXF/PDF, web API
+pytest -q          # 143 tests: geometry, labels, end-to-end DXF/PDF, web API
+
+# Browser (Playwright) end-to-end tests against the real web UI
+pip install -e ".[e2e]"
+python -m playwright install chromium
+pytest -m e2e -q   # uploads a plan, runs metraj/toplu/maliyet, checks the UI
 ```
+
+`pytest -q` (without `-m e2e`) runs everything, including the browser tests;
+the `e2e` marker only selects them when the server + browsers are available.
 
 Expected values in the end-to-end tests are hand-computed so that the take-off
 formulas cannot silently change.

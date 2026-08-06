@@ -27,6 +27,11 @@ web = [
     "python-multipart>=0.0.9",
     "pywebview>=5.0",
 ]
+# Tarayici (Playwright) uc tan uca testleri
+e2e = [
+    "playwright>=1.40",
+    "pytest-playwright>=0.4",
+]
 
 [project.scripts]
 hakedis = "hakedis.cli:main"
@@ -39,9 +44,14 @@ hakedis = ["data/*.yml", "web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "e2e: Playwright tarayici testleri (tests/e2e)",
+]
 filterwarnings = [
     # ezdxf'in eski numpy kullanimi (harici bagimlilik) - kendi kodumuz degil
     "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning:ezdxf",
     # starlette test client'in httpx2 onerisi (UserWarning alt sinifi, harici bagimlilik)
     "ignore::UserWarning:fastapi.testclient",
+    # Playwright istemcisinin HTTPX uyarisi (harici bagimlilik)
+    "ignore::UserWarning:playwright",
 ]
