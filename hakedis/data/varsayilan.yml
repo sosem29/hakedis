@@ -12,6 +12,12 @@
 # --birim ile ezilirse buradaki deger gecerlidir.
 birim: cm            # mm | cm | m
 
+# --- DXF/DWG dogrulama -------------------------------------------------------
+# DXF/DWG'ten okunan geometri iki eksende de bu degerden (m) kucukse dosya
+# kirpilmis/bozuk sayilir ve hata verilir. 0 verilirse kontrol kapali.
+dxf:
+  min_plan_boyutu: 1.0
+
 # --- Kat bilgileri -----------------------------------------------------------
 kat:
   ad: "Normal Kat"
@@ -99,6 +105,12 @@ katmanlar:
     - '^MİMARİ'
     - '^KOTA'
     - '^DONATI'
+  # Kesin esleme: katman adi birebir tip ile baglanir (desenlerden once
+  # denenir). Arayuzdeki "Eslestirme" sekmesi burayi otomatik doldurur.
+  # Bicim: katman_adi: tip  (tip: kolon|perde|kiris|doseme|merdiven|bosluk|yoksay)
+  # kesin:
+  #   "S-KOLON-202": kolon
+  #   "AKS-1": yoksay
 
 # --- Geometrik sezgiseller ---------------------------------------------------
 # Katman adlari guvenilmezse (ozellikle PDF'te) eleman tipini bicimden tahmin et
@@ -207,6 +219,30 @@ pozlar:
   # Yaklasik donati metraji icin tek poz (katsayi esasli)
   demir: "18.001"
 
+# --- Yaklasik maliyet --------------------------------------------------------
+# Metraj cetvelindeki poz miktarlari x birim fiyat ile yaklasik maliyet
+# cikarilir (devlet ihale yaklasik maliyeti gibi). Fiyatlar ORNEKTIR;
+# guncel bakanlik (Cevre, Sehircilik ve Iklim Degisikligi) veya il birim
+# fiyatlarinizi girin. Arayuzde "Maliyet" sekmesinden de duzenlenebilir.
+maliyet:
+  aktif: false
+  para_birimi: "TL"
+  # Yerli islerde genellikle %20
+  kdv_oran: 20
+  # Poz -> birim fiyat (TL). Poz numaralari ustteki pozlar ile eslesir.
+  poz_fiyatlari:
+    "16.058/1-K": 4200
+    "21.011/K": 480
+    "16.058/1-P": 4200
+    "21.011/P": 480
+    "16.058/1-Kr": 4300
+    "21.011/Kr": 500
+    "16.058/1-D": 4300
+    "21.011/D": 500
+    "16.058/1-M": 4600
+    "21.011/M": 560
+    "18.001": 55
+
 # --- PDF'e ozel ayarlar ------------------------------------------------------
 pdf:
   # Pafta olcegi. "1/50" veya sayisal 50. Kalibrasyon verilirse o oncelikli.
@@ -223,6 +259,20 @@ pdf:
   #   "#00ff00": doseme
   # Cok ince cizgileri (tarama, olculendirme) at
   min_cizgi_kalinligi: 0.0
+  # Sta4CAD kalip/temel planlarinda betonarme elemanlarin dolgusu kirmizi,
+  # kiriscik/tarama yesil olarak yuzlerce kucuk parca seklinde cizilir. Bu
+  # desen (kisa cizgi orani esiginin ustunde) algilanirsa dolgu renkleri
+  # otomatik yoksayilir ve yalnizca buyuk kapali alanlar (doseme) metraja
+  # girer. Kullanici bir rengi elle eslerse secimi korunur.
+  sta4cad_otomatik: true
+  sta4cad_kisa_cizgi_pt: 10.0
+  sta4cad_kisa_cizgi_orani: 0.40
+  sta4cad_renkler:
+    - "#ff0000"
+    - "#269900"
+  # Donati (demir) isareti tasiyan etiket orani bu esigi asarsa paftanin
+  # donati/kiris detay paftasi olabilecegine dair not dusulur.
+  donati_etiket_orani: 0.10
   # Yazilari da oku
   metin_oku: true
   # Iki nokta kalibrasyonu (olcekten daha guvenilirdir; tanimliysa oncelikli).

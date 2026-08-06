@@ -300,8 +300,46 @@ def dxf_oku(yol: str | Path, ayarlar: Ayarlar) -> Cizim:
             "Model uzayinda cizim varligi bulunamadi. Cizim paper space'te "
             "olabilir; AutoCAD'de model uzayina tasiyip tekrar deneyin."
         )
+    else:
+        _plan_boyutunu_dogrula(varliklar, p.name, ayarlar)
 
     return Cizim(varliklar=varliklar, kaynak=str(p), birim=birim, notlar=notlar)
+
+
+def _plan_boyutunu_dogrula(
+    varliklar: list, dosya_adi: str, ayarlar: Ayarlar
+) -> None:
+    """Geometrinin gercekci bir plan boyutunda oldugunu dogrular.
+
+    LibreDWG ile cevrilen bazı DWG'ler (Sta4CAD gibi) model uzayina yalnizca
+    kucuk bir kirpilmis parca dusurur; boyle bir dosyadan metraj cikarmak
+    anlamsizdir. Bu durumda net bir hata verilir.
+    """
+    esik = float(ayarlar.al("dxf.min_plan_boyutu", 1.0))
+    if esik <= 0:
+        return
+    min_x = min_y = float("inf")
+    max_x = max_y = float("-inf")
+    for v in varliklar:
+        if v.tur == "metin":
+            continue
+        for n in v.noktalar:
+            min_x = min(min_x, n.x)
+            min_y = min(min_y, n.y)
+            max_x = max(max_x, n.x)
+            max_y = max(max_y, n.y)
+    if min_x == float("inf"):
+        return
+    en = max_x - min_x
+    boy = max_y - min_y
+    if en < esik and boy < esik:
+        raise ValueError(
+            f"{dosya_adi} icinden okunabilir plan geometrisi cikmadi: "
+            f"boyut yalnizca {en:.2f} x {boy:.2f} m. Bu dosya kirpilmis bir "
+            f"gorsel/parca olabilir veya LibreDWG cevirimi kayipli olabilir. "
+            f"Kalip planinin PDF surumunu yukleyin veya DXF'e AutoCAD "
+            f"(ODA) uzerinden kaydedip tekrar deneyin."
+        )
 
 
 def dxf_katman_dokumu(yol: str | Path) -> list[tuple[str, int]]:

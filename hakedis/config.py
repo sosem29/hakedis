@@ -104,6 +104,15 @@ class Ayarlar:
         ad = (katman or "").strip()
         if not ad:
             return None
+        # Kesin (exact) esleme once uygulanir: kullanici arayuzden bir katmani
+        # acikca hangi tipe bagladiysa desen eslemelerinden once gecerlidir.
+        kesin = self.al("katmanlar.kesin", {}) or {}
+        for katman_adi, tip in kesin.items():
+            if str(katman_adi).upper() == ad.upper():
+                tip = str(tip)
+                if tip == "sezgisel":
+                    return None
+                return tip
         for desen in self.katman_desenleri("yoksay"):
             if desen.search(ad):
                 return "yoksay"

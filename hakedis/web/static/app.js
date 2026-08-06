@@ -125,6 +125,8 @@ const DURUM = {
   varsayilan: null,
   yapilandirma: null,
   aktifSekme: "metraj",
+  sonSatirlar: null,
+  sonKaynak: "",
 };
 
 /* ---------------- Form uretici ---------------- */
@@ -404,8 +406,38 @@ function parametreHtml(p) {
   </div>`;
 }
 
-function metrajSonucuGoster(sonuc, ad) {
-  const alan = $("#metraj-sonuc");
+function maliyetOzetHtml(m) {
+  if (!m || !m.kalemler || !m.kalemler.length) return "";
+  const rows = m.kalemler.slice(0, 8).map((k) => `<tr>
+    <td class="sol">${esc(k.poz)}</td>
+    <td class="sol">${esc(k.tanim)}</td>
+    <td>${sayiFormat(k.miktar, 2)} ${esc(k.birim)}</td>
+    <td>${sayiFormat(k.fiyat, 2)}</td>
+    <td class="vurgulu">${sayiFormat(k.tutar, 2)}</td>
+  </tr>`).join("");
+  const ekstra = m.kalemler.length > 8
+    ? `<tr><td colspan="5" class="sol">… ve ${m.kalemler.length - 8} kalem daha (Maliyet sekmesinde tamamı)</td></tr>` : "";
+  const eksik = m.fiyatsiz_pozlar && m.fiyatsiz_pozlar.length
+    ? `<div class="uyari-kutu"><div class="uyari-kutu-baslik">Fiyat tanımsız pozlar</div>
+       <ul><li>${m.fiyatsiz_pozlar.map(esc).join(", ")}</li></ul></div>` : "";
+  return `<div class="bolum-baslik">💰 Yaklaşık Maliyet (${esc(m.para_birimi)})</div>
+  <div class="tablo-kapsayici"><table class="metraj">
+    <thead><tr>
+      <th class="sol">Poz</th><th class="sol">Tanım</th>
+      <th>Miktar</th><th>Birim Fiyat</th><th>Tutar</th>
+    </tr></thead>
+    <tbody>${rows}${ekstra}</tbody></table></div>
+  <div class="maliyet-toplam">
+    <span>Ara toplam <b>${sayiFormat(m.ara_toplam, 2)}</b></span>
+    <span>KDV (%${m.kdv_oran}) <b>${sayiFormat(m.kdv, 2)}</b></span>
+    <span>GENEL TOPLAM <b>${sayiFormat(m.genel_toplam, 2)} ${esc(m.para_birimi)}</b></span>
+  </div>
+  <p class="maliyet-not">${esc(m.not)}</p>
+  ${eksik}`;
+}
+
+function metrajSonucuGoster(sonuc, ad, kapsayici) {
+  const alan = kapsayici || $("#metraj-sonuc");
   const ozet = ozetKartlariHtml(sonuc.ozet);
   const uyari = uyarilarHtml(sonuc.uyarilar);
   const cetvel = cetvelTablosu(sonuc.satirlar, false);
@@ -432,11 +464,12 @@ function metrajSonucuGoster(sonuc, ad) {
     <div class="ozet-grid">${ozet}</div>
     ${uyari}
     ${cetvel}
+    ${maliyetOzetHtml(sonuc.maliyet)}
     ${pafta}`;
   alan.hidden = false;
   sonucTablosunuBagla();
 
-  $$("#metraj-sonuc .indir-butonlar button").forEach((b) => {
+  $$(".indir-butonlar button", alan).forEach((b) => {
     b.addEventListener("click", () => {
       const taban = `${dosyaAdiTemiz(ad)}.metraj`;
       if (b.dataset.indir === "excel") {
@@ -475,6 +508,8 @@ async function metrajCalistir() {
 
   try {
     const veri = await api("/api/metraj", { method: "POST", body: fd });
+    DURUM.sonSatirlar = veri.satirlar;
+    DURUM.sonKaynak = dosya.name;
     metrajSonucuGoster(veri, dosya.name);
     bildirim("Metraj hazır.");
   } catch (e) {
@@ -581,7 +616,8 @@ function topluSonucuGoster(veri) {
     ${katOzet}
     <div class="ozet-grid">${kartlar}</div>
     ${uyari}
-    ${cetvel}`;
+    ${cetvel}
+    ${maliyetOzetHtml(veri.maliyet)}`;
   alan.hidden = false;
   sonucTablosunuBagla();
 
@@ -621,6 +657,8 @@ async function topluCalistir() {
 
   try {
     const veri = await api("/api/toplu", { method: "POST", body: fd });
+    DURUM.sonSatirlar = veri.satirlar;
+    DURUM.sonKaynak = `${katlar.length} kat`;
     topluSonucuGoster(veri);
     bildirim("Toplu metraj hazır.");
   } catch (e) {
@@ -690,6 +728,149 @@ async function pdfIncele() {
   }
 }
 
+/* ---------------- Eslestirme ---------------- */
+
+const ESLE_TIPLER = [
+  { deger: "", etiket: "— Sezgisel (eşleme yok) —" },
+  { deger: "kolon", etiket: "Kolon" },
+  { deger: "perde", etiket: "Perde" },
+  { deger: "kiris", etiket: "Kiriş" },
+  { deger: "doseme", etiket: "Döşeme" },
+  { deger: "merdiven", etiket: "Merdiven" },
+  { deger: "bosluk", etiket: "Boşluk" },
+  { deger: "yoksay", etiket: "Yoksay (metraja girmez)" },
+];
+
+let ESLE_DURUM = { tur: null, dosya: null, adaylar: [] };
+
+function esleTipSecenekleri(secili) {
+  return ESLE_TIPLER.map((t) =>
+    `<option value="${t.deger}" ${t.deger === (secili || "") ? "selected" : ""}>${t.etiket}</option>`
+  ).join("");
+}
+
+function esleAdaylariGoster(veri) {
+  const alan = $("#esle-adaylar");
+  const baslik = veri.tur === "renk"
+    ? "PDF Renkleri — her renge bir eleman tipi seçin"
+    : "Katmanlar — her katmana bir eleman tipi seçin";
+  const satirlar = veri.adaylar.map((a, i) => {
+    const isim = veri.tur === "renk"
+      ? `<span class="renk-kutu" style="background:${esc(a.anahtar)}"></span> ${esc(a.anahtar)}`
+      : `<span class="katman-kutu">${esc(a.anahtar)}</span>`;
+    const durum = a.suanki_tip
+      ? `<span class="esle-durum esle-durum-tamam">şu an: ${esc(a.suanki_tip)}</span>`
+      : (a.oneri_tip
+          ? `<span class="esle-durum esle-durum-oneri">öneri: ${esc(a.oneri_tip)}</span>`
+          : `<span class="esle-durum esle-durum-yok">eşlenmemiş</span>`);
+    const detay = a.aciklama
+      ? `<div class="esle-aciklama">${esc(a.aciklama)}</div>`
+      : "";
+    return `<tr>
+      <td class="sol">${isim}</td>
+      <td class="sol">${detay}</td>
+      <td class="vurgulu">${a.adet}</td>
+      <td>${durum}</td>
+      <td><select data-esle-aday="${i}">${esleTipSecenekleri(a.suanki_tip || a.oneri_tip)}</select></td>
+    </tr>`;
+  }).join("");
+  const acik = veri.tur === "renk"
+    ? "Kırmızı/yeşil Sta4CAD dolgu renkleri için otomatik 'Yoksay' önerildi; mavi hatlar sezgisel bırakılırsa büyük kapalı alanlar döşeme sayılır."
+    : "Önerilenler otomatik işaretlendi; sezgisel bırakılan katmanlar geometrik tahminle işlenir.";
+  alan.innerHTML = `
+    <div class="bolum-baslik">${baslik}</div>
+    <div class="esle-ozet">
+      Toplam <b>${veri.toplam_adet}</b> varlık — <b class="${veri.eslenmeyen_adet ? "esle-kirmizi" : ""}">${veri.eslenmeyen_adet}</b> adedi şu an eşlenmemiş
+      &nbsp;•&nbsp; ${acik}
+    </div>
+    <div class="tablo-kapsayici"><table class="metraj">
+      <thead><tr><th class="sol">Renk / Katman</th><th class="sol">Detay</th><th>Adet</th><th>Durum</th><th>Eleman Tipi</th></tr></thead>
+      <tbody>${satirlar}</tbody></table></div>`;
+  $("#esle-icerik").hidden = false;
+  $("#esle-uygula-alan").hidden = false;
+}
+
+function esleEslemeleriOku() {
+  const esleme = {};
+  $$("#esle-adaylar select[data-esle-aday]").forEach((sel) => {
+    const a = ESLE_DURUM.adaylar[Number(sel.dataset.esleAday)];
+    if (a && sel.value) esleme[a.anahtar] = sel.value;
+  });
+  return esleme;
+}
+
+function esleFormData(dosya) {
+  const fd = new FormData();
+  fd.append("dosya", dosya);
+  fd.append("ayarlar", JSON.stringify(DURUM.yapilandirma));
+  const s = $("#esle-sayfa").value;
+  if (s && s !== "1") fd.append("sayfa", s);
+  return fd;
+}
+
+async function esleTara() {
+  const girdi = $("#esle-dosya");
+  const dosya = girdi.files[0];
+  if (!dosya) { bildirim("Lütfen bir plan dosyası seçin.", "hata"); return; }
+
+  const spinner = $("#esle-yukleniyor");
+  const hata = $("#esle-hata");
+  const icerik = $("#esle-icerik");
+  const bos = $("#esle-bos");
+  spinner.hidden = false; hata.hidden = true; icerik.hidden = true; bos.hidden = true;
+  $("#esle-uygula-alan").hidden = true;
+
+  try {
+    const veri = await api("/api/esle-tara", { method: "POST", body: esleFormData(dosya) });
+    ESLE_DURUM = { tur: veri.tur, dosya, adaylar: veri.adaylar };
+    esleAdaylariGoster(veri);
+  } catch (e) {
+    hata.textContent = "Hata: " + e.message;
+    hata.hidden = false;
+    bos.hidden = false;
+  } finally {
+    spinner.hidden = true;
+  }
+}
+
+async function esleMetrajHesapla(dosya) {
+  const alan = $("#esle-sonuc");
+  alan.hidden = false;
+  alan.innerHTML = `<div class="yukleniyor" style="padding:24px"><div class="spinner"></div> Metraj hesaplanıyor…</div>`;
+  try {
+    const veri = await api("/api/metraj", { method: "POST", body: esleFormData(dosya) });
+    metrajSonucuGoster(veri, dosya.name, alan);
+    bildirim("Eslemeler uygulandı, metraj hazır.");
+  } catch (e) {
+    alan.innerHTML = `<div class="hata-kutusu">Hata: ${esc(e.message)}</div>`;
+  }
+}
+
+async function esleUygula() {
+  const dosya = ESLE_DURUM.dosya;
+  if (!dosya) { bildirim("Önce dosyayı tarayın.", "hata"); return; }
+  const esleme = esleEslemeleriOku();
+  if (ESLE_DURUM.tur === "renk") yolAyarla(DURUM.yapilandirma, "pdf.renk_esleme", esleme);
+  else yolAyarla(DURUM.yapilandirma, "katmanlar.kesin", esleme);
+
+  try {
+    const dt = new DataTransfer();
+    dt.items.add(dosya);
+    $("#metraj-dosya").files = dt.files;
+    $(".birak-metin", $("#metraj-birak")).innerHTML = `<strong>${esc(dosya.name)}</strong>`;
+    $("#metraj-birak").classList.add("dolu");
+  } catch (_) { /* eslemenin uygulanmasi metraj icin yeterli */ }
+
+  await esleMetrajHesapla(dosya);
+}
+
+async function esleYamlIndir() {
+  try {
+    indirMetin(await yamlUret(), "hakedis-esleme.yml", "application/yaml");
+    bildirim("YAML indirildi; ofis.yml olarak kaydedip --config ile kullanın.");
+  } catch (e) { bildirim("YAML üretilemedi: " + e.message, "hata"); }
+}
+
 /* ---------------- Ayarlar ---------------- */
 
 async function yamlUret() {
@@ -724,6 +905,139 @@ function ayarFormlariniYenile() {
   katAlanlariniYenile();
 }
 
+/* ---------------- Maliyet ---------------- */
+
+function maliyetAyarlari() {
+  if (!DURUM.yapilandirma.maliyet) DURUM.yapilandirma.maliyet = {};
+  const m = DURUM.yapilandirma.maliyet;
+  if (!m.poz_fiyatlari) m.poz_fiyatlari = {};
+  return m;
+}
+
+function maliyetPozlari() {
+  const fiyatlar = maliyetAyarlari().poz_fiyatlari;
+  const gorulen = [...new Set((DURUM.sonSatirlar || []).map((s) => s.poz))];
+  const pozlar = [...new Set([...gorulen, ...Object.keys(fiyatlar)])].sort();
+  const tanimlar = {};
+  (DURUM.sonSatirlar || []).forEach((s) => {
+    if (!tanimlar[s.poz] && s.tanim) tanimlar[s.poz] = s.tanim;
+  });
+  return pozlar.map((poz) => ({ poz, fiyat: fiyatlar[poz] ?? "", tanim: tanimlar[poz] || "" }));
+}
+
+function maliyetFormuYenile() {
+  const m = maliyetAyarlari();
+  const satirlar = maliyetPozlari().map((p) => `<tr>
+    <td class="sol">${esc(p.poz)}</td>
+    <td class="sol">${esc(p.tanim)}</td>
+    <td><input type="number" step="1" min="0" data-maliyet-fiyat="${esc(p.poz)}"
+      value="${p.fiyat === "" ? "" : p.fiyat}" placeholder="fiyat yok"></td>
+  </tr>`).join("");
+
+  $("#maliyet-form").innerHTML = `
+    <div class="form-satir">
+      <label class="alan alan-tam">Maliyet hesabı açık (metraj sonucuna eklenir)
+        <span class="anahtar"><input type="checkbox" id="maliyet-aktif" ${m.aktif ? "checked" : ""}><span class="kaydirici"></span></span>
+      </label>
+    </div>
+    <div class="form-satir">
+      <label class="alan">Para birimi
+        <input type="text" id="maliyet-birim" value="${esc(m.para_birimi || "TL")}">
+      </label>
+      <label class="alan">KDV (%)
+        <input type="number" id="maliyet-kdv" step="1" min="0" value="${esc(m.kdv_oran ?? 20)}">
+      </label>
+    </div>
+    <div class="bolum-baslik">💰 Poz Birim Fiyatları (TL)</div>
+    <div class="tablo-kapsayici">
+      <table class="metraj">
+        <thead><tr>
+          <th class="sol">Poz</th><th class="sol">Tanım</th><th>Birim Fiyat (${esc(m.para_birimi || "TL")})</th>
+        </tr></thead>
+        <tbody>${satirlar || `<tr><td colspan="3" class="sol">Önce bir metraj çalıştırın; pozlar burada listelenecek.</td></tr>`}</tbody>
+      </table>
+    </div>
+    <div class="form-satir" style="margin-top:12px">
+      <button id="maliyet-hesapla" class="birincil">Hesapla &amp; Göster</button>
+    </div>
+    <p class="maliyet-not">Fiyatlar ORNEKTIR; güncel bakanlık birim fiyatlarını girin.
+      "Aktif" açıkken metraj/toplu sonucuna ve Excel'e yaklaşık maliyet eklenir.</p>`;
+
+  const aktif = $("#maliyet-aktif");
+  aktif.addEventListener("change", () => { m.aktif = aktif.checked; });
+  $("#maliyet-birim").addEventListener("input", () => { m.para_birimi = $("#maliyet-birim").value; });
+  $("#maliyet-kdv").addEventListener("input", () => {
+    const n = parseFloat($("#maliyet-kdv").value);
+    if (Number.isFinite(n)) m.kdv_oran = n;
+  });
+  $$("[data-maliyet-fiyat]", $("#maliyet-form")).forEach((g) => {
+    g.addEventListener("input", () => {
+      const n = parseFloat(g.value);
+      m.poz_fiyatlari[g.dataset.maliyetFiyat] = Number.isFinite(n) && n > 0 ? n : 0;
+    });
+  });
+  $("#maliyet-hesapla").addEventListener("click", maliyetHesapla);
+}
+
+function maliyetHesapla() {
+  const alan = $("#maliyet-sonuc");
+  const fiyatlar = maliyetAyarlari().poz_fiyatlari || {};
+  if (!DURUM.sonSatirlar || !DURUM.sonSatirlar.length) {
+    alan.innerHTML = `<div class="hata-kutusu">Önce Metraj veya Toplu sekmesinde bir metraj üretin.</div>`;
+    alan.hidden = false;
+    return;
+  }
+  const m = maliyetAyarlari();
+  const kalemler = [];
+  const fiyatli = new Set();
+  DURUM.sonSatirlar.forEach((s) => {
+    const fiyat = fiyatlar[s.poz];
+    if (fiyat === undefined || fiyat === null || !(fiyat > 0)) return;
+    fiyatli.add(s.poz);
+    const miktar = s.dusum ? -(s.miktar || 0) : (s.miktar || 0);
+    const tutar = miktar * fiyat;
+    if (Math.abs(tutar) < 1e-9) return;
+    kalemler.push({ poz: s.poz, tanim: s.tanim || "", eleman: s.eleman || "", birim: s.birim || "", miktar, fiyat, tutar, dusum: !!s.dusum });
+  });
+  const ara = kalemler.reduce((a, k) => a + k.tutar, 0);
+  const kdvOran = Number(m.kdv_oran ?? 20);
+  const kdv = ara * kdvOran / 100;
+  const toplam = ara + kdv;
+  const birim = m.para_birimi || "TL";
+  const eksik = [...new Set(DURUM.sonSatirlar.map((s) => s.poz))].filter((p) => !fiyatli.has(p)).sort();
+
+  const rows = kalemler.map((k) => `<tr class="${k.dusum ? "dusum" : ""}">
+    <td class="sol">${esc(k.poz)}</td>
+    <td class="sol">${esc(k.tanim)}</td>
+    <td class="sol">${esc(k.eleman)}</td>
+    <td>${sayiFormat(k.miktar, 2)} ${esc(k.birim)}</td>
+    <td>${sayiFormat(k.fiyat, 2)}</td>
+    <td class="vurgulu">${sayiFormat(k.tutar, 2)}</td>
+  </tr>`).join("");
+
+  alan.innerHTML = `
+    <div class="sonuc-ust"><div class="sonuc-ust-bilgi">
+      <h2>Yaklaşık Maliyet <span class="badge badge-kat">${esc(DURUM.sonKaynak)}</span></h2>
+      <p>${kalemler.length} kalem poz fiyatlı — ${DURUM.sonSatirlar.length} metraj satırı.</p>
+    </div></div>
+    <div class="tablo-kapsayici"><table class="metraj">
+      <thead><tr>
+        <th class="sol">Poz</th><th class="sol">Tanım</th><th class="sol">Eleman</th>
+        <th>Miktar</th><th>Birim Fiyat</th><th>Tutar</th>
+      </tr></thead>
+      <tbody>${rows || `<tr><td colspan="6" class="sol">Hiçbir poz için fiyat girilmedi.</td></tr>`}</tbody>
+    </table></div>
+    <div class="maliyet-toplam">
+      <span>Ara toplam <b>${sayiFormat(ara, 2)}</b></span>
+      <span>KDV (%${kdvOran}) <b>${sayiFormat(kdv, 2)}</b></span>
+      <span>GENEL TOPLAM <b>${sayiFormat(toplam, 2)} ${esc(birim)}</b></span>
+    </div>
+    ${eksik.length ? `<div class="uyari-kutu"><div class="uyari-kutu-baslik">Fiyat tanımsız pozlar</div>
+      <ul>${eksik.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></div>` : ""}
+    <p class="maliyet-not">Birim fiyatlar ORNEKTIR; kesin bedel için güncel bakanlık birim fiyatlarını girin.</p>`;
+  alan.hidden = false;
+}
+
 /* ---------------- Baslangic ---------------- */
 
 async function baslangicYukle() {
@@ -751,11 +1065,15 @@ function olaylariBagla() {
 
   birakAlaniYukle($("#metraj-birak"), $("#metraj-dosya"), () => { /* seçim bilgisi bırakma alanında */ });
   birakAlaniYukle($("#pdf-birak"), $("#pdf-dosya"), () => { /* seçim bilgisi bırakma alanında */ });
+  birakAlaniYukle($("#esle-birak"), $("#esle-dosya"), () => { /* seçim bilgisi bırakma alanında */ });
 
   $("#metraj-hesapla").addEventListener("click", metrajCalistir);
   $("#toplu-hesapla").addEventListener("click", topluCalistir);
   $("#toplu-ekle").addEventListener("click", () => topluSatirEkle());
   $("#pdf-incele").addEventListener("click", pdfIncele);
+  $("#esle-tara").addEventListener("click", esleTara);
+  $("#esle-uygula").addEventListener("click", esleUygula);
+  $("#esle-yaml").addEventListener("click", esleYamlIndir);
 
   $("#ayar-varsayilan").addEventListener("click", ayarlariYenile);
   $("#ayar-indir").addEventListener("click", async () => {

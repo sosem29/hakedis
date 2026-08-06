@@ -21,6 +21,9 @@
       <button class="menu-ogesi aktif" data-sekme="metraj">
         <span class="ikon">📐</span> Metraj
       </button>
+      <button class="menu-ogesi" data-sekme="esle">
+        <span class="ikon">🔗</span> Eşleştir
+      </button>
       <button class="menu-ogesi" data-sekme="toplu">
         <span class="ikon">🗂️</span> Toplu Metraj
       </button>
@@ -100,6 +103,51 @@
             <div class="bos-ikon">📊</div>
             <p>Sonuçlar burada görünecek.</p>
             <p class="bos-alt">Metraj, kırık ölçü cetveli ve kontrol paftası.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================== EŞLEŞTİR ============================ -->
+    <section id="sekme-esle" class="sekme">
+      <header class="sayfa-baslik">
+        <h1>Renk / Katman Eşleştirme</h1>
+        <p>Dosyadaki renkleri (PDF) veya katmanları (DXF/DWG) görün; her birine eleman tipi atayın. Bu, "renk_esleme bos" uyarılarının yerine geçer.</p>
+      </header>
+      <div class="cift-sutun">
+        <div class="panel giris">
+          <div class="panel-baslik">Plan Dosyası</div>
+          <div id="esle-birak" class="birak-alani">
+            <input type="file" id="esle-dosya" accept=".dwg,.dxf,.pdf" hidden>
+            <div class="birak-ikon">🔗</div>
+            <p class="birak-metin"><strong>Dosyayı sürükleyip bırakın</strong> veya tıklayıp seçin</p>
+            <p class="birak-alt">Desteklenen: .dwg, .dxf, .pdf</p>
+          </div>
+          <div class="panel-baslik">PDF (yalnızca .pdf)</div>
+          <div class="form-satir">
+            <label class="alan">Sayfa
+              <input type="number" id="esle-sayfa" value="1" min="1">
+            </label>
+          </div>
+          <button id="esle-tara" class="birincil">Tara &amp; Eşleştirilecekleri Listele</button>
+          <div id="esle-uygula-alan" hidden>
+            <button id="esle-uygula" class="birincil">Eslemeleri Uygula &amp; Metraj</button>
+            <button id="esle-yaml" class="ikincil">YAML İndir</button>
+          </div>
+        </div>
+        <div class="panel sonuc">
+          <div id="esle-yukleniyor" class="yukleniyor" hidden>
+            <div class="spinner"></div> Dosya taranıyor…
+          </div>
+          <div id="esle-hata" class="hata-kutusu" hidden></div>
+          <div id="esle-icerik" class="sonuc-alani" hidden>
+            <div id="esle-adaylar"></div>
+            <div id="esle-sonuc"></div>
+          </div>
+          <div id="esle-bos" class="bos-alani">
+            <div class="bos-ikon">🔗</div>
+            <p>Renk / katman adayları burada görünecek.</p>
+            <p class="bos-alt">Her satıra bir eleman tipi seçin, sonra "Eslemeleri Uygula &amp; Metraj" deyin.</p>
           </div>
         </div>
       </div>

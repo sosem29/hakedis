@@ -95,6 +95,25 @@ def _sayfa_int(deger: str | None) -> int | None:
         raise HTTPException(422, f"'sayfa' tam sayi olmali, '{deger}' verildi.")
 
 
+# Metraja girme ihtimali dusuk olan yaygin katman parcalari (olcu, tarama,
+# pencere/dograma, donati vb.) icin onerilen "yoksay" eslesmesi.
+YOKSAY_KATMAN_ISARETLERI = (
+    "OLCU", "OLCULENDIR", "DIM", "TARAMA", "HATCH", "ANTET", "CERCEVE",
+    "PENC", "PENH", "PEND", "KAPI", "DOGRAMA", "DONATI", "AKS", "KOTA",
+    "KILAVUZ", "TEXT",
+)
+
+
+def _katman_onerisi(katman_adi: str) -> str | None:
+    """Katman adina gore metraja girmemesi onerilecek tipi dondurur."""
+    buyuk = (katman_adi or "").upper()
+    if not buyuk:
+        return None
+    if any(isaret in buyuk for isaret in YOKSAY_KATMAN_ISARETLERI):
+        return "yoksay"
+    return None
+
+
 async def _kaydet(dosya: UploadFile) -> str:
     """Yuklenen dosyayi gecici bir yola yazar, yolunu dondurur."""
     uzanti = Path(dosya.filename or "").suffix.lower()
@@ -112,7 +131,7 @@ async def _kaydet(dosya: UploadFile) -> str:
     return yol
 
 
-def _excel_b64(sonuc, toplu: bool = False) -> str:
+def _excel_b64(sonuc, toplu: bool = False, ayarlar=None) -> str:
     from hakedis.report import excel_yaz, excel_yaz_toplu
 
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
@@ -121,7 +140,7 @@ def _excel_b64(sonuc, toplu: bool = False) -> str:
         if toplu:
             excel_yaz_toplu(sonuc, yol)
         else:
-            excel_yaz(sonuc, yol)
+            excel_yaz(sonuc, yol, ayarlar=ayarlar)
         return base64.b64encode(Path(yol).read_bytes()).decode("ascii")
     finally:
         Path(yol).unlink(missing_ok=True)
@@ -259,11 +278,14 @@ async def metraj(
     finally:
         Path(yol).unlink(missing_ok=True)
 
+    from hakedis.maliyet import maliyet_hesapla
     from hakedis.report.veri import sonuc_verisi
 
     paket = sonuc_verisi(sonuc)
+    if ayarlar_nesnesi.al("maliyet.aktif", False):
+        paket["maliyet"] = maliyet_hesapla(sonuc, ayarlar_nesnesi)
     paket["svg"] = _svg_metni(sonuc)
-    paket["excel_b64"] = _excel_b64(sonuc)
+    paket["excel_b64"] = _excel_b64(sonuc, ayarlar=ayarlar_nesnesi)
     return paket
 
 
@@ -319,11 +341,107 @@ async def toplu(
         for yol in gecici:
             Path(yol).unlink(missing_ok=True)
 
+    from hakedis.maliyet import maliyet_hesapla
+    from hakedis.metraj import sonuclari_birlestir
     from hakedis.report.veri import toplu_verisi
 
     paket = toplu_verisi(sonuclar)
+    if ayarlar_nesnesi.al("maliyet.aktif", False):
+        paket["maliyet"] = maliyet_hesapla(
+            sonuclari_birlestir(sonuclar), ayarlar_nesnesi
+        )
     paket["excel_b64"] = _excel_b64(sonuclar, toplu=True)
     return paket
+
+
+# ---------------------------------------------------------------------------
+# Eslestirme (renk/katman -> tip arayuzu)
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/esle-tara")
+async def esle_tara(
+    dosya: UploadFile = File(...),
+    ayarlar: str | None = Form(None),
+    sayfa: str | None = Form(None),
+) -> dict:
+    """Dosyadaki renk (PDF) veya katman (DXF/DWG) adaylarini listeler.
+
+    Kullanici her adayi bir eleman tipine baglar; arayuz `pdf.renk_esleme`
+    veya `katmanlar.kesin` uretir. Bu uclu, 'pdf.renk_esleme bos' gibi
+    uyarilarin yerine gorsel eslestirme sunar.
+    """
+    from hakedis.readers import cizim_oku
+    from hakedis.readers.pdf import (
+        TERS_TIP_KATMANI,
+        _katman_ata,
+        renk_esleme_adaylari,
+    )
+
+    ayarlar_nesnesi = _ayarlari_kur(ayarlar, None)
+    sayfa_no = _sayfa_int(sayfa)
+    if sayfa_no is not None:
+        ayarlar_nesnesi.ham.setdefault("pdf", {})["sayfa"] = sayfa_no
+
+    yol = await _kaydet(dosya)
+    uzanti = Path(dosya.filename or yol).suffix.lower()
+    try:
+        if uzanti == ".pdf":
+            adaylar = renk_esleme_adaylari(yol, sayfa_no or 1)
+            sta4cad_renkler = [
+                str(r).lower()
+                for r in (ayarlar_nesnesi.al("pdf.sta4cad_renkler", []) or [])
+            ]
+            for aday in adaylar:
+                katman = _katman_ata(aday["anahtar"], 0.0, ayarlar_nesnesi)
+                aday["suanki_tip"] = TERS_TIP_KATMANI.get(katman)
+                aday["oneri_tip"] = (
+                    "yoksay"
+                    if aday["anahtar"].lower() in sta4cad_renkler
+                    and aday["suanki_tip"] is None
+                    else None
+                )
+                aday["ornek_renk"] = aday["anahtar"]
+                aday["aciklama"] = (
+                    f"kalınlık {aday['kalinliklar']} pt • {aday['turler']}"
+                )
+            esleme_turu = "renk"
+            toplam_adet = sum(a["adet"] for a in adaylar)
+        else:
+            # Inceleme modu: kirpilmis/bozuk DWG'lerde bile katman listesi
+            # gosterilir; boyut dogrulamasi yalnizca METRAJ icindir.
+            ayarlar_nesnesi.ham.setdefault("dxf", {})["min_plan_boyutu"] = 0
+            cizim = cizim_oku(yol, ayarlar_nesnesi)
+            adaylar = []
+            for katman_adi, adet in cizim.katmanlar().items():
+                adaylar.append(
+                    {
+                        "anahtar": katman_adi,
+                        "adet": adet,
+                        "suanki_tip": ayarlar_nesnesi.katman_tipi(katman_adi),
+                        "oneri_tip": _katman_onerisi(katman_adi),
+                        "ornek_renk": None,
+                        "aciklama": "",
+                    }
+                )
+            adaylar.sort(key=lambda a: -a["adet"])
+            esleme_turu = "katman"
+            toplam_adet = sum(a["adet"] for a in adaylar)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(422, f"Plan incelenemedi: {e}")
+    finally:
+        Path(yol).unlink(missing_ok=True)
+
+    eslenmeyen_adet = sum(
+        a["adet"] for a in adaylar if a["suanki_tip"] is None
+    )
+    return {
+        "tur": esleme_turu,
+        "dosya": dosya.filename or "",
+        "toplam_adet": toplam_adet,
+        "eslenmeyen_adet": eslenmeyen_adet,
+        "adaylar": adaylar,
+    }
 
 
 # ---------------------------------------------------------------------------

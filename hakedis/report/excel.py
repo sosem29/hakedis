@@ -26,6 +26,7 @@ BASLIK_DOLGU = PatternFill("solid", fgColor="1F4E79")
 BASLIK_YAZI = Font(bold=True, color="FFFFFF", size=10)
 GRUP_DOLGU = PatternFill("solid", fgColor="DDEBF7")
 DUSUM_YAZI = Font(color="C00000", italic=True, size=10)
+DUSUM_DOLGU = PatternFill("solid", fgColor="FCE4E4")
 TOPLAM_YAZI = Font(bold=True, size=10)
 TOPLAM_DOLGU = PatternFill("solid", fgColor="FFF2CC")
 UYARI_YAZI = Font(color="C00000", size=10)
@@ -311,7 +312,101 @@ def _sayfa_uyarilar(wb: Workbook, sonuc: MetrajSonucu) -> None:
         h.alignment = Alignment(wrap_text=True, vertical="top")
 
 
-def excel_yaz(sonuc: MetrajSonucu, hedef: str | Path) -> Path:
+def _sayfa_maliyet(
+    wb: Workbook, sonuc: MetrajSonucu, m: dict | None
+) -> None:
+    """Maliyet tablosunu ayri bir Excel sayfasi olarak yazar."""
+    ws = wb.create_sheet("Maliyet")
+    genislikler = {
+        "A": 16, "B": 14, "C": 10, "D": 34,
+        "E": 12, "F": 12, "G": 16,
+    }
+    for harf, g in genislikler.items():
+        ws.column_dimensions[harf].width = g
+
+    if m is None:
+        ws["A1"] = "Yaklasik maliyet devre disi."
+        ws["A1"].font = Font(bold=True, size=12)
+        ws["A2"] = (
+            "yapilandirmada maliyet.aktif: true yapin veya "
+            "web arayuzunde 'Maliyet' sekmesini kullanin."
+        )
+        return
+
+    ws["A1"] = f"YAKLASIK MALIYET ({m['para_birimi']})"
+    ws["A1"].font = Font(bold=True, size=14)
+    satir = 3
+    basliklar = [
+        ("Poz", "A"), ("Tanim", "B"), ("Birim", "C"), ("Eleman", "D"),
+        ("Miktar", "E"), ("Birim Fiyat", "F"), ("Tutar", "G"),
+    ]
+    for i, (ad, _harf) in enumerate(basliklar, start=1):
+        h = ws.cell(row=satir, column=i, value=ad)
+        h.fill = BASLIK_DOLGU
+        h.font = BASLIK_YAZI
+        h.border = CERCEVE
+    satir += 1
+
+    for k in m["kalemler"]:
+        degerler = [
+            k["poz"],
+            k["tanim"],
+            k["birim"],
+            k["eleman"],
+            k["miktar"],
+            k["fiyat"],
+            k["tutar"],
+        ]
+        for i, deger in enumerate(degerler, start=1):
+            h = ws.cell(row=satir, column=i, value=deger)
+            h.border = CERCEVE
+            if i in (5, 6, 7):
+                h.number_format = "0.00"
+        if k["dusum"]:
+            for i in range(1, 8):
+                ws.cell(row=satir, column=i).fill = DUSUM_DOLGU
+        satir += 1
+
+    satir += 1
+    for i, (ad, deger) in enumerate(
+        [
+            ("ARA TOPLAM", m["ara_toplam"]),
+            (f"KDV (%{m['kdv_oran']:g})", m["kdv"]),
+            ("GENEL TOPLAM", m["genel_toplam"]),
+        ],
+        start=1,
+    ):
+        if i == 1:
+            ws.cell(row=satir, column=1, value=ad).font = TOPLAM_YAZI
+            ws.cell(row=satir, column=2, value=f"{deger:,.2f}").font = TOPLAM_YAZI
+        elif i == 2:
+            ws.cell(row=satir, column=1, value=ad).font = TOPLAM_YAZI
+            ws.cell(row=satir, column=2, value=f"{deger:,.2f}").font = TOPLAM_YAZI
+        else:
+            ws.cell(row=satir, column=1, value=ad).font = Font(bold=True, size=12)
+            ws.cell(row=satir, column=2, value=f"{deger:,.2f}").font = Font(
+                bold=True, size=12
+            )
+        satir += 1
+
+    if m["fiyatsiz_pozlar"]:
+        satir += 1
+        h = ws.cell(
+            row=satir, column=1,
+            value="Fiyat tanimsiz pozlar: " + ", ".join(m["fiyatsiz_pozlar"]),
+        )
+        h.font = UYARI_YAZI
+    satir += 1
+    ws.cell(row=satir, column=1, value=m["not"]).alignment = Alignment(
+        wrap_text=True, vertical="top"
+    )
+
+
+def excel_yaz(
+    sonuc: MetrajSonucu,
+    hedef: str | Path,
+    ayarlar=None,
+) -> Path:
     """Metraj sonucunu Excel dosyasi olarak yazar."""
     hedef = Path(hedef)
     wb = Workbook()
@@ -322,6 +417,13 @@ def excel_yaz(sonuc: MetrajSonucu, hedef: str | Path) -> Path:
     _sayfa_kirik_olcu(wb, sonuc)
     _sayfa_elemanlar(wb, sonuc)
     _sayfa_uyarilar(wb, sonuc)
+    if ayarlar is not None:
+        from hakedis.maliyet import maliyet_hesapla
+
+        if ayarlar.al("maliyet.aktif", False):
+            _sayfa_maliyet(wb, sonuc, maliyet_hesapla(sonuc, ayarlar))
+        else:
+            _sayfa_maliyet(wb, sonuc, None)
 
     hedef.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(hedef))

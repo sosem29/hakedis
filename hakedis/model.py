@@ -263,6 +263,8 @@ class Cizim:
     birim: str = "m"
     olcek: float = 1.0
     notlar: list[str] = field(default_factory=list)
+    # Okuyucunun tespit asamasina aktardigi ozel bilgiler
+    nitelikler: dict[str, Any] = field(default_factory=dict)
 
     def katmanlar(self) -> dict[str, int]:
         sayac: dict[str, int] = {}

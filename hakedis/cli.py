@@ -86,9 +86,14 @@ def komut_metraj(args) -> int:
 
     print(konsol_ozeti(sonuc, ayrintili=args.ayrintili))
 
+    if ayarlar.al("maliyet.aktif", False):
+        from hakedis.maliyet import maliyet_hesapla, maliyet_konsol
+
+        print(maliyet_konsol(maliyet_hesapla(sonuc, ayarlar)))
+
     kaynak = Path(args.dosya)
     cikti = Path(args.cikti) if args.cikti else kaynak.with_suffix(".metraj.xlsx")
-    excel_yaz(sonuc, cikti)
+    excel_yaz(sonuc, cikti, ayarlar=ayarlar)
     print(f"\nMetraj cetveli yazildi : {cikti}")
 
     if args.svg is not False:
@@ -116,6 +121,57 @@ def _json_yaz(sonuc, hedef: Path) -> None:
     hedef.write_text(
         json.dumps(veri, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+
+def komut_maliyet(args) -> int:
+    """Daha once uretilmis bir metraj JSON'una birim fiyatlari uygular."""
+    from hakedis.maliyet import maliyet_konsol
+
+    veri = json.loads(Path(args.metraj_json).read_text(encoding="utf-8"))
+    fiyatlar = ayarlari_yukle(args.config).al("maliyet.poz_fiyatlari", {}) or {}
+
+    satirlar = veri["satirlar"] if isinstance(veri, dict) and "satirlar" in veri else veri
+    kalemler = []
+    fiyatli = set()
+    for s in satirlar:
+        fiyat = fiyatlar.get(s["poz"])
+        if fiyat is None:
+            continue
+        fiyatli.add(s["poz"])
+        miktar = s["miktar"]
+        if s.get("dusum"):
+            miktar = -miktar
+        tutar = miktar * float(fiyat)
+        if abs(tutar) < 1e-9:
+            continue
+        kalemler.append(
+            {
+                "poz": s["poz"],
+                "tanim": s.get("tanim", ""),
+                "eleman": s.get("eleman", ""),
+                "birim": s.get("birim", ""),
+                "miktar": miktar,
+                "fiyat": float(fiyat),
+                "tutar": tutar,
+                "dusum": bool(s.get("dusum")),
+            }
+        )
+    ara = sum(k["tutar"] for k in kalemler)
+    kdv = ara * float(ayarlari_yukle(args.config).al("maliyet.kdv_oran", 20)) / 100.0
+    eksik = sorted({s["poz"] for s in satirlar} - fiyatli)
+    maliyet = {
+        "aktif": True,
+        "para_birimi": ayarlari_yukle(args.config).al("maliyet.para_birimi", "TL"),
+        "kdv_oran": ayarlari_yukle(args.config).al("maliyet.kdv_oran", 20),
+        "kalemler": kalemler,
+        "ara_toplam": ara,
+        "kdv": kdv,
+        "genel_toplam": ara + kdv,
+        "fiyatsiz_pozlar": eksik,
+        "not": "Birim fiyatlar ORNEKTIR; guncel birim fiyatlarinizi girin.",
+    }
+    print(maliyet_konsol(maliyet))
+    return 0
 
 
 def komut_katmanlar(args) -> int:
@@ -496,6 +552,14 @@ Cok katli / cok paftali:
     k = alt.add_parser("katmanlar", help="Cizimdeki katmanlari ve eslemeleri listele")
     _ortak_argumanlar(k)
     k.set_defaults(func=komut_katmanlar)
+
+    mk = alt.add_parser(
+        "maliyet",
+        help="Metraj JSON'una poz birim fiyatlarini uygula (yaklasik maliyet)",
+    )
+    mk.add_argument("metraj_json", help="`--json` ile uretilmis metraj dosyasi")
+    mk.add_argument("--config", "-c", help="Ofis yapilandirma dosyasi (YAML)")
+    mk.set_defaults(func=komut_maliyet)
 
     pi = alt.add_parser("pdf-incele", help="PDF paftasindaki renkleri/olcegi incele")
     pi.add_argument("dosya", help="PDF dosyasi")

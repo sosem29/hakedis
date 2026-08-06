@@ -1,182 +1,204 @@
 # hakedis
 
-Kalıp planından (**DWG / DXF / PDF**) **eleman bazlı kırık ölçü metrajı** üreten
-açık kaynak sistem. Üç boyutlu model kurmaya gerek yoktur; doğrudan çizimin
-kendisinden okur.
+**Auditable take-off (kırık ölçü) quantity take-off for reinforced-concrete
+formwork plans** — reads **DWG / DXF / PDF** drawings directly and produces
+element-level quantities without building a 3D model.
 
-Her ölçü, denetlenebilir parçalar zinciri olarak tutulur — çıktı yalnızca bir
-toplam değil, o toplamın **nereden geldiğini gösteren kırık ölçü cetvelidir**.
+Every quantity is kept as an auditable chain of parts: the output is not just a
+total, but the *broken-out measurement* that shows exactly where each number
+comes from.
 
 ```
-S01    Kolon betonu 0.30/0.60          0.513 m3   A=0.1800 m2 x H=2.85 m
-P1     Perde betonu t=0.25             2.494 m3   L=3.500 x t=0.25 x H=2.85
-        1. parça: (2.63, 1.63) -> (4.50, 1.63) = 1.875 m
-        2. parça: (2.63, 1.63) -> (2.63, 3.25) = 1.625 m
-K101   Kiriş betonu 0.25/0.50          0.998 m3   b=0.25 x (h-t)=0.35 x L=11.400
-        Brüt eksen boyu 12.300 m, mesnet düşümü 0.900 m
-        1. açıklık: (0.15, 0.00) -> (5.85, 0.00) = 5.700 m
-        2. açıklık: (6.15, 0.00) -> (11.85, 0.00) = 5.700 m
+S01    Column concrete 0.30/0.60       0.513 m3   A=0.1800 m2 x H=2.85 m
+P1     Wall concrete t=0.25            2.494 m3   L=3.500 x t=0.25 x H=2.85
+         1. leg: (2.63, 1.63) -> (4.50, 1.63) = 1.875 m
+         2. leg: (2.63, 1.63) -> (2.63, 3.25) = 1.625 m
+K101   Beam concrete 0.25/0.50         0.998 m3   b=0.25 x (h-t)=0.35 x L=11.400
+        Gross axis length 12.300 m, support deduction 0.900 m
+         1. span: (0.15, 0.00) -> (5.85, 0.00) = 5.700 m
+         2. span: (6.15, 0.00) -> (11.85, 0.00) = 5.700 m
 ```
 
-## Ne yapar
+## Features
 
-| Eleman | Tespit | Hesaplanan |
+| Element | Detection | Quantities computed |
 |---|---|---|
-| **Kolon** | Kapalı kesit → en küçük dönmüş dikdörtgen (dönük kolonlarda da doğru) | Beton `A×H`, kalıp `çevre×H` − saplanan kiriş yüzleri |
-| **Perde** | Karşılıklı yüz eşlemesiyle **orta eksen**; L/T/U perdelerde köşe kırılımı bulunur | Beton `L×t×H`, kalıp `2×L×H` + baş kalıpları |
-| **Kiriş** | Kapalı poligon *veya* iki paralel çizgi; **mesnetlerde kırılıp net açıklıklara** bölünür | Beton `b×(h−t)×L`, kalıp alt + 2 yan |
-| **Döşeme** | Köşe koordinatlarından Gauss alanı, boşluklar düşülür | Beton `A×t`, tabla kalıbı − (kiriş+kolon+perde ayak izi **birleşimi**) |
-| **Merdiven** | Plan izdüşümü kapalı alanı | Beton `A×k×t`, kalıp `A×k` — `k` rıht/basamaktan veya doğrudan |
+| **Column** | Closed section → minimal rotated bounding box (works for skewed columns) | Concrete `A×H`, formwork `perimeter×H` − intersecting beam faces |
+| **Shear wall** | Face pairing → **centerline**; corner break-outs for L/T/U walls | Concrete `L×t×H`, formwork `2×L×H` + end forms |
+| **Beam** | Closed polygon *or* two parallel lines; **split into net spans at supports** | Concrete `b×(h−t)×L`, formwork soffit + 2 sides |
+| **Slab** | Shoelace area from corner coordinates, openings deducted | Concrete `A×t`, table formwork − (beam+column+wall footprint **union**) |
+| **Stair** | Closed plan footprint | Concrete `A×k×t`, formwork `A×k` — `k` from riser/tread or explicit |
 
-İsteğe bağlı (yapılandırmadan açılır) ek kurallar:
+Optional rules (enabled via config):
 
-- **Yaklaşık demir (donatı):** `donati.aktif` ile her elemanın beton satırı
-  yanına `kg` satırı eklenir; katsayılar ofis ortalamanızdan (`kg/m³`).
-- **Guseli/dişli ve mantar (kirişsiz) döşeme:** `doseme.tip` ile beton hacmine
-  özel kural uygulanır; çıktıya elle kontrol uyarısı düşer.
-- **Merdiven eğim katsayısı:** `merdiven.riht/basamak` verilirse
-  `k = √(1+(rıht/basamak)²)` uygulanır.
+- **Reinforcement estimate:** with `donati.aktif`, a `kg` line is added next to
+  each concrete line; coefficients are office averages (`kg/m³`).
+- **Ribbed (guse) and flat-slab (mantar) floors:** `doseme.tip` applies
+  approximation rules to concrete volume; a manual-check warning is emitted.
+- **Stair slope factor:** given `merdiven.riht/basamak`, `k = √(1+(riser/tread)²)`.
+- **Approximate cost:** multiply measured quantities by ministry/item-rate unit
+  prices to produce a bill of quantities and an estimate with KDV.
 
-Kritik iki nokta doğru kurgulanmıştır:
+Two details are handled deliberately:
 
-- **Net açıklık:** kiriş boyu aks-aks değil, mesnet yüzünden mesnet yüzüne ölçülür.
-- **Çifte düşüm yok:** döşeme kalıbından düşülen kiriş ve kolon ayak izleri
-  *birleşim* alanı olarak hesaplanır, kesişimleri iki kez düşülmez.
+- **Net span:** beam lengths are measured face-to-face of supports, not axis-to-axis.
+- **No double deduction:** slab-formwork deductions for beams, columns, and walls
+  use the *union* of their footprints, so intersections are never deducted twice.
 
-## Kurulum
+## Installation
 
 ```bash
-git clone <bu-depo> && cd hakedis
-pip install -e .           # komut satırı arayüzü
-pip install -e ".[web]"    # gerekirse görsel arayüz (web + masaüstü)
-hakedis dogrula            # bağımlılıkları kontrol et
+git clone <this-repo> && cd hakedis
+pip install -e .           # command-line interface
+pip install -e ".[web]"    # optional visual UI (web + desktop)
+hakedis dogrula            # verify dependencies
 ```
 
-Görsel arayüz için FastAPI/uvicorn/pywebview kurulur; bunlar yalnızca
-`hakedis web` ve `hakedis masaustu` komutlarında gerekir.
+The visual UI pulls in FastAPI/uvicorn/pywebview; these are only needed for the
+`hakedis web` and `hakedis masaustu` commands.
 
-DXF ve PDF için ek bir şey gerekmez. **DWG** okumak için bir dönüştürücü lazım:
+No extra setup is needed for DXF or PDF. Reading **DWG** requires a converter:
 
 ```bash
-sudo apt install libredwg-tools     # GNU LibreDWG (GPLv3, açık kaynak) — önerilen
+sudo apt install libredwg-tools     # GNU LibreDWG (GPLv3, open source) — recommended
 brew install libredwg               # macOS
 ```
 
-Kurulu değilse `hakedis` bunu açıkça söyler; çizimi CAD'den `DXF R2013` olarak
-kaydetmek de her zaman çalışan bir yoldur.
+If it is not installed, `hakedis` says so explicitly. Saving the drawing as
+`DXF R2013` from your CAD application always works as an alternative.
 
-Kullanılan bileşenlerin tamamı açık kaynak ve ücretsizdir:
+All dependencies are open source and free:
 [ezdxf](https://ezdxf.mozman.at/) (MIT), [shapely](https://shapely.readthedocs.io/) (BSD),
 [pdfplumber](https://github.com/jsvine/pdfplumber) (MIT), openpyxl (MIT), numpy (BSD),
-[GNU LibreDWG](https://www.gnu.org/software/libredwg/) (GPLv3, harici süreç olarak çağrılır).
+[GNU LibreDWG](https://www.gnu.org/software/libredwg/) (GPLv3, invoked as an external process).
 
-## Kullanım
+## Usage
 
 ```bash
-# 1. Denemek için örnek plan üret
+# 1. Generate a sample plan to try it out
 hakedis ornek deneme.dxf
 hakedis metraj deneme.dxf
 
-# 2. Kendi çiziminizle: önce katmanları görün
+# 2. Inspect layers of your own drawing
 hakedis katmanlar plan.dwg
 
-# 3. Ofis ayarlarınızı oluşturup katman adlarınızı girin
+# 3. Generate an office config and enter your layer names
 hakedis config-yaz --cikti ofis.yml
 
-# 4. Metrajı çıkarın
+# 4. Run the take-off
 hakedis metraj plan.dwg --config ofis.yml \
     --kat "3. Normal Kat" --kat-yuksekligi 3.20 --doseme-kalinligi 0.15
 
-# 5. Çok katlı / çok paftalı iş için
+# 5. Multi-storey / multi-sheet work
 hakedis toplu gir.dxf kat1.dxf kat2.dxf \
-    --kat-adlari "Giriş Kat" "1. Normal Kat" "2. Normal Kat"
-hakedis toplu plan.pdf --paftalar "1:Giriş,2:1.Kat,3:2.Kat" --config ofis.yml
+    --kat-adlari "Giris Kat" "1. Normal Kat" "2. Normal Kat"
+hakedis toplu plan.pdf --paftalar "1:Giris,2:1.Kat,3:2.Kat" --config ofis.yml
 ```
 
-## Görsel arayüz (web + masaüstü)
-
-Sistemin iki yüzü aynı tek sayfa arayüzünü paylaşır; ikisi de yerel bir
-sunucu başlatır (`127.0.0.1`), çiziminiz makinenizden çıkmaz ve internet
-bağlantısı gerekmez:
+### Approximate cost from a previous run
 
 ```bash
-hakedis web                 # varsayılan tarayıcıda açar
-hakedis masaustu            # yerli masaüstü penceresi (webview)
+hakedis metraj plan.dwg --json sonuc.json          # dump the take-off to JSON
+hakedis maliyet sonuc.json --config ofis.yml       # apply unit prices
 ```
 
-Arayüzün bölümleri:
+Set `maliyet.aktif: true` in the config to embed the cost table in the take-off
+console output and the Excel workbook automatically.
 
-- **Metraj:** dosyayı sürükleyip bırakın; kat adı/yüksekliği, donatı,
-  döşeme tipi, merdiven eğimi seçin. Özet kartları, kırık ölçü cetveli,
-  **kontrol paftası** (SVG) ve uyarılar tek ekranda; Excel/JSON/SVG indirilir.
-- **Toplu metraj:** kat dosyalarını tek tek ekleyin; kat özeti tablosu ve
-  ortak cetvel.
-- **PDF incele:** paftadaki renk/kalınlık dökümü ve hazır `renk_esleme`
-  YAML şablonu.
-- **Ayarlar:** hızlı form veya gelişmiş YAML editörü — `config-yaz` ile
-  aynı yapılandırma, arayüzden yönetilir.
+## Visual UI (web + desktop)
 
-Masaüstü penceresi için macOS'ta `pywebview` (WKWebView), Windows'ta
-WebView2, Linux'ta WebKitGTK kullanılır; `pywebview` kurulu değilse
-`hakedis masaustu` arayüzü otomatik olarak tarayıcıda açar.
+Both faces share the same single-page interface; both start a local server
+(`127.0.0.1`). Your drawing never leaves your machine and no internet
+connection is required:
 
-## Çıktılar
+```bash
+hakedis web                 # opens in the default browser
+hakedis masaustu            # native desktop window (webview)
+```
 
-- `plan.metraj.xlsx` — Özet / Metraj Cetveli / **Kırık Ölçü** / Elemanlar / Uyarılar
-- `plan.metraj.kontrol.svg` — **kontrol paftası**
-- `--json` ile makine okunur çıktı (başka sisteme aktarım için)
-- `toplu` için `plan.toplu.xlsx` — **Kat Ozeti** / Metraj Cetveli / Kırık Ölçü / Elemanlar / Uyarılar
+Tabs:
 
-### Kontrol paftası
+- **Metraj (Take-off):** drag-and-drop a file; choose floor name/height,
+  reinforcement, slab type, stair slope. Summary cards, the broken-out
+  measurement table, the **control sheet** (SVG), and warnings are shown on one
+  screen; Excel/JSON/SVG download.
+- **Eşleştir (Mapping):** scan the file for PDF colors or DXF/DWG layers, then
+  assign an element type to each. This replaces the "renk_esleme bos" warnings
+  and gives each candidate a suggested mapping (including a smart "ignore"
+  suggestion for hatching/measurement layers).
+- **Toplu Metraj (Bulk):** add floor files one by one; produces a floor-summary
+  table and a shared take-off table.
+- **PDF İncele (Inspect):** color/line-thickness dump of a PDF sheet plus a
+  ready-to-use `renk_esleme` YAML template.
+- **Maliyet (Cost):** edit poz unit prices, KDV, and currency; compute an
+  estimate from the last take-off, and toggle whether the cost is embedded in
+  take-off results and Excel.
+- **Ayarlar (Settings):** quick form or advanced YAML editor — same
+  configuration as `config-yaz`, managed from the UI.
 
-Otomatik metrajda en büyük risk, yanlış tespit edilen bir elemanın fark
-edilmeden cetvele girmesidir. SVG kontrol paftası sistemin çizimi **nasıl
-anladığını** gösterir: her eleman tipine göre boyanır, adı ve kesiti yazılır,
-perde/kiriş orta eksenleri kırılım noktalarıyla üstüne çizilir.
+On macOS the desktop window uses `pywebview` (WKWebView), WebView2 on Windows,
+WebKitGTK on Linux; if `pywebview` is not installed, `hakedis masaustu`
+automatically falls back to the browser.
 
-Teslim etmeden önce üç şeyi doğrulayın:
+## Outputs
 
-1. Her kolon/perde/kiriş boyanmış mı — atlanan var mı?
-2. Renkler doğru mu — kolon perde sayılmış mı?
-3. Kesikli eksen çizgileri elemanın ortasından geçiyor mu?
+- `plan.metraj.xlsx` — Summary / Take-off Table / **Broken-out Measurements** /
+  Elements / Warnings / Maliyet (when enabled)
+- `plan.metraj.kontrol.svg` — **control sheet**
+- `--json` for machine-readable output (for handing off to other systems)
+- `plan.toplu.xlsx` for bulk runs — Floor Summary / Take-off Table / Broken-out /
+  Elements / Warnings
 
-Düşük güvenle tespit edilen elemanlar adının yanında `!` ile, otomatik
-adlandırılanlar `*` ile işaretlenir; hepsi "Uyarılar" sayfasına da düşer.
+### Control sheet
 
-## Yapılandırma
+The biggest risk in automated take-off is a mis-detected element entering the
+table unnoticed. The SVG control sheet shows **how the system understood the
+drawing**: every element is painted by type, labeled with its name and section,
+and wall/beam centerlines are drawn over it with their break-out points.
 
-`hakedis config-yaz` ile üretilen YAML'da düzenlemeniz gerekenler:
+Before delivering, verify three things:
+
+1. Every column/wall/beam is painted — any that were skipped?
+2. The colors are right — was a column counted as a wall?
+3. Do the dashed centerlines pass through the middle of each element?
+
+Low-confidence elements are marked `!` next to their name, auto-named ones `*`;
+both also land in the Warnings sheet.
+
+## Configuration
+
+Generated with `hakedis config-yaz`. The things you will typically edit:
 
 ```yaml
-birim: cm                      # DXF'te $INSUNITS varsa o kullanılır
+birim: cm                      # DXF $INSUNITS is used if present
 
 kat:
   kat_yuksekligi: 3.00
   doseme_kalinligi: 0.15
 
-katmanlar:                     # KENDİ katman adlarınızı buraya (regex)
+katmanlar:                     # YOUR layer names (regex)
   kolon:  ['^KOLON', '^S-KOL']
   perde:  ['^PERDE']
   kiris:  ['^KIRIS', '^KİRİŞ']
   doseme: ['^DOSEME', '^DÖŞEME']
   yoksay: ['^AKS', '^ÖLÇÜ', '^DONATI']
 
-metraj:                        # ofis pratiğinize göre açıp kapatın
+metraj:                        # toggle to match office practice
   kiris_betonu_doseme_dusumu: true
   doseme_kalibindan_mesnet_dus: true
 
-doseme:                        # özel döşeme tipleri (yaklaşık kurallar)
+doseme:                        # special slab types (approximate rules)
   tip: normal                  # normal | guseli | mantar
   guseli_hacim_katsayisi: 1.35
   mantar_kolon_ustu_artisi: 0.05
   mantar_kolon_baslik_alani: 1.00
 
-merdiven:                      # eğim katsayısı: k = √(1+(rıht/basamak)²)
+merdiven:                      # slope factor: k = √(1+(riser/tread)²)
   riht: 0.175
   basamak: 0.28
   kalinlik: 0.14
 
-donati:                        # YAKLAŞIK demir metrajı (beton m3 başına kg)
+donati:                        # APPROXIMATE reinforcement (kg per m³ concrete)
   aktif: false
   katsayilar:
     kolon: 110
@@ -185,24 +207,34 @@ donati:                        # YAKLAŞIK demir metrajı (beton m3 başına kg)
     doseme: 95
     merdiven: 70
 
-pozlar:                        # kendi birim fiyat pozlarınız
+pozlar:                        # your unit-price bill item numbers
   kolon_beton: "16.058/1-K"
   demir: "18.001"
+
+maliyet:                       # approximate cost (unit prices x quantities)
+  aktif: false
+  para_birimi: "TL"
+  kdv_oran: 20
+  poz_fiyatlari:               # poz -> unit price (ILLUSTRATIVE — update these)
+    "16.058/1-K": 4200
+    "21.011/K": 480
+    "18.001": 55
 ```
 
-Etiket okuma `K101 25/50`, `S01 30x60`, `P1 25`, `TD=15`, `K-12 (30/70)`
-biçimlerini tanır; `0.25/0.50` gibi metre cinsinden yazılmış kesitleri de
-ayırt eder. Kendi biçiminiz farklıysa `etiket.desenler` altına regex ekleyin.
+Label reading understands `K101 25/50`, `S01 30x60`, `P1 25`, `TD=15`,
+`K-12 (30/70)`; sections written in metres such as `0.25/0.50` are
+distinguished as well. If your format differs, add a regex under
+`etiket.desenler`.
 
-## PDF'ten metraj
+## Take-off from PDF
 
-PDF'te katman yoktur, bu yüzden iki şeyi dışarıdan vermeniz gerekir:
+PDFs have no layers, so two things are supplied externally:
 
 ```bash
-hakedis pdf-incele plan.pdf        # paftadaki renkleri ve sayfa boyutunu gör
+hakedis pdf-incele plan.pdf        # see the sheet's colors and page size
 ```
 
-Çıkan renkleri `ofis.yml` içinde eşleyin:
+Map the reported colors in `ofis.yml`:
 
 ```yaml
 pdf:
@@ -212,50 +244,62 @@ pdf:
     "#808080": doseme
 ```
 
-Ölçek için pafta ölçeğini verebilirsiniz, ama **iki nokta kalibrasyonu daha
-güvenilirdir** (pafta ölçekli basılmamış olabilir). Boyunu bildiğiniz bir aks
-aralığını PDF puntosu cinsinden ölçüp:
+You may give the sheet scale, but **two-point calibration is more reliable**
+(the sheet may not be printed to scale). Measure a known axis distance in PDF
+points and pass:
 
 ```bash
 hakedis metraj plan.pdf --config ofis.yml --kalibre 340.5:6.00
 ```
 
-Yalnızca **vektörel** PDF'ler okunabilir. Taranmış (görüntü) paftada çizgi
-verisi yoktur; sistem bu durumda sessizce yanlış sonuç üretmek yerine açık
-hata verir.
+Only **vector** PDFs can be read. For scanned (raster) sheets there is no line
+data; rather than silently producing wrong results, the system raises an
+explicit error.
 
-## Sınırlar
+### Sta4CAD / design-suite output
 
-Bilerek yapılmayanlar — metraja güvenebilmeniz için açıkça yazılmıştır:
+Sta4CAD formwork plans are drawn with filled (hatched) elements: concrete fills
+are red, rib hatching green, boundaries blue, and dimensions black. The hatch
+is emitted as thousands of tiny segments rather than closed polygons, which
+would otherwise flood heuristic detection with noise. When a dense short-line
+pattern is detected, the fill colors are mapped to "ignore" by default and the
+slab-only result is reported with an explicit note (this behavior is
+configurable under `pdf.sta4cad_*`). For exact column/wall/beam quantities from
+such plans, use the matching tab or the DWG source.
 
-- **Donatı metrajı yoktur.** Sistem beton/demir planından donatı çizimini
-  okumaz. `donati.aktif` ile beton hacmi üzerinden **katsayı esaslı yaklaşık**
-  demir (kg) üretilebilir; bu değer kontrol paftası değil, ön büyüklük
-  hesabıdır.
-- **Merdiven** plan izdüşümünden hesaplanır; eğim katsayısı rıht/basamaktan
-  uygulanır ama tüm plan alanına (sahanlıklar dahil) uygulandığı için
-  yaklaşıktır, düşük güvenle işaretlenir.
-- **Guseli/dişli döşeme** ve **kirişsiz döşeme (mantar)** için katsayı esaslı
-  yaklaşık kurallar vardır; gerçek diş/guse geometrisi okunmaz, elle kontrol
-  gerekir.
-- **Eğrisel elemanlar** için özel kural yoktur; bunlar yaklaşık çıkar.
-- Tek pafta tek çalışmada işlenir. Çok katlı iş için `toplu` komutu (çoklu
-  dosya veya çok sayfalı PDF) her katı `--kat-adlari` / `--paftalar` ile
-  adlandırıp ortak Excel ve JSON üretir.
+## Limitations
 
-Sistem çıktısı **kontrol edilmiş metraj değil, kontrol edilecek metrajdır.**
-Kontrol paftasını ve Uyarılar sayfasını okumadan hakedişe girmeyin.
+Honestly stated so you can trust the output:
 
-## Test
+- **No rebar detailing.** The system does not read rebar drawings.
+  `donati.aktif` produces a coefficient-based *estimate* (kg per m³ concrete) —
+  a pre-sizing figure, not a control sheet.
+- **Stairs** are computed from the plan footprint; the slope factor from
+  riser/tread is applied to the whole footprint (landings included), so the
+  result is approximate and flagged with low confidence.
+- **Ribbed (guse) and flat (mantar) slabs** use coefficient-based approximate
+  rules; the actual rib/guse geometry is not read and manual review is required.
+- **Curved elements** have no special handling and come out approximate.
+- One sheet is processed per run. For multi-storey work use the `toplu` command
+  (multiple files or a multi-page PDF), naming each floor with
+  `--kat-adlari` / `--paftalar` and producing a shared Excel and JSON output.
+- **Costs are illustrative.** Unit prices are examples; always enter current
+  ministry / provincial unit prices before relying on an estimate.
+
+The output is **a take-off to be checked, not a checked take-off.** Do not
+submit it before reviewing the control sheet and the Warnings sheet.
+
+## Tests
 
 ```bash
 pip install -e ".[test]"
-pytest -q          # 106 test: geometri, etiket, uçtan uca DXF/PDF, yeni özellikler + web API
+pytest -q          # 128 tests: geometry, labels, end-to-end DXF/PDF, web API
 ```
 
-Uçtan uca testlerdeki beklenen değerler elle hesaplanmıştır, böylece metraj
-formüllerinin sessizce değişmesi engellenir.
+Expected values in the end-to-end tests are hand-computed so that the take-off
+formulas cannot silently change.
 
-## Lisans
+## License
 
-MIT. (LibreDWG harici bir süreç olarak çağrılır; kendi GPLv3 lisansına tabidir.)
+MIT. (LibreDWG is invoked as an external process and remains under its own
+GPLv3 license.)

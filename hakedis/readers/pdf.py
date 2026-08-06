@@ -17,6 +17,7 @@ cizgi verisi yoktur; bu durumda acik bir hata verilir.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,9 @@ TIP_KATMANI: dict[str, str] = {
     "merdiven": "MERDIVEN",
     "yoksay": "AKS-YOKSAY",
 }
+
+# TIP_KATMANI'nin tersi: katman adindan esleme tipini bulmak icin
+TERS_TIP_KATMANI: dict[str, str] = {v: k for k, v in TIP_KATMANI.items()}
 
 ISIM_RENKLERI: dict[str, str] = {
     "siyah": "#000000",
@@ -105,13 +109,45 @@ def olcek_carpani(ayarlar: Ayarlar) -> tuple[float, str]:
     return carpan, f"pafta olcegi 1/{olcek:g} (1 pt = {carpan:.6f} m)"
 
 
-def _katman_ata(renk: str, kalinlik: float, ayarlar: Ayarlar) -> str:
+def _katman_ata(
+    renk: str, kalinlik: float, ayarlar: Ayarlar, esleme: dict | None = None
+) -> str:
     """Renk/kalinliktan katman adi turetir."""
-    esleme = ayarlar.al("pdf.renk_esleme", {}) or {}
+    if esleme is None:
+        esleme = ayarlar.al("pdf.renk_esleme", {}) or {}
     for anahtar, tip in esleme.items():
         if renk_normalize(anahtar) == renk:
             return TIP_KATMANI.get(str(tip).lower(), str(tip).upper())
     return f"PDF-{renk}-w{kalinlik:.2f}"
+
+
+def _sta4cad_deseni_yogun_mu(
+    kisa_cizgi: int, toplam_cizgi: int, ayarlar: Ayarlar
+) -> bool:
+    """Sta4CAD dolgu deseni (cok sayida kisa blok/kirisçik cizgisi) var mi."""
+    esik = float(ayarlar.al("pdf.sta4cad_kisa_cizgi_orani", 0.40))
+    if toplam_cizgi <= 0 or (kisa_cizgi / toplam_cizgi) < esik:
+        return False
+    return bool(ayarlar.al("pdf.sta4cad_otomatik", True))
+
+
+def _sta4cad_tespit_esleme(
+    esleme: dict, kisa_cizgi: int, toplam_cizgi: int, ayarlar: Ayarlar
+) -> dict:
+    """Sta4CAD ciktilarinda dolgu (hatch) renkleri icin varsayilan esleme.
+
+    Sta4CAD kalip/temel planlarinda betonarme elemanlarin dolgusu kirmizi,
+    kiriscik/tarama yesil cizgilerle cizilir; geometriyi kapali poligon
+    olarak degil yuzlerce kucuk parca olarak verir. Bu desen sezgisel tespite
+    gurultu olarak yansir; dolgu renkleri varsayilan olarak yok sayilir.
+    Kullanici bir rengi zaten bir tipe bagladiysa secimine dokunulmaz.
+    """
+    if not _sta4cad_deseni_yogun_mu(kisa_cizgi, toplam_cizgi, ayarlar):
+        return esleme
+    otomatik = dict(esleme)
+    for renk in ayarlar.al("pdf.sta4cad_renkler", ["#ff0000", "#269900"]) or []:
+        otomatik.setdefault(str(renk).lower(), "yoksay")
+    return otomatik
 
 
 def _nokta_listesi(nesne: dict, carpan: float) -> list[Nokta]:
@@ -148,6 +184,7 @@ def pdf_oku(yol: str | Path, ayarlar: Ayarlar) -> Cizim:
     sayfa_no = int(ayarlar.al("pdf.sayfa", 1))
     min_kalinlik = float(ayarlar.al("pdf.min_cizgi_kalinligi", 0.0) or 0.0)
     metin_oku = bool(ayarlar.al("pdf.metin_oku", True))
+    kisa_esik_pt = float(ayarlar.al("pdf.asmolen_kisa_cizgi_pt", 10.0))
 
     notlar = [
         f"PDF olcegi: {olcek_aciklama}. Yanlissa --olcek veya "
@@ -166,6 +203,42 @@ def pdf_oku(yol: str | Path, ayarlar: Ayarlar) -> Cizim:
             )
         sayfa = pdf.pages[sayfa_no - 1]
 
+        # Asmolen deseni icin once kisa cizgi yogunlugu olculur (punto ile)
+        kisa_cizgi = 0
+        toplam_cizgi = 0
+        for tur_adi in ("lines", "rects", "curves"):
+            for nesne in getattr(sayfa, tur_adi, []) or []:
+                toplam_cizgi += 1
+                uzunluk = abs(
+                    float(nesne.get("x1", 0.0)) - float(nesne.get("x0", 0.0))
+                ) + abs(float(nesne.get("bottom", 0.0)) - float(nesne.get("top", 0.0)))
+                if uzunluk < kisa_esik_pt:
+                    kisa_cizgi += 1
+
+        renk_esleme = ayarlar.al("pdf.renk_esleme", {}) or {}
+        sta4cad_tespit = _sta4cad_tespit_esleme(
+            renk_esleme, kisa_cizgi, toplam_cizgi, ayarlar
+        )
+        sta4cad_pasif = False
+        dolgu_renkleri = [
+            str(r).lower()
+            for r in (ayarlar.al("pdf.sta4cad_renkler", ["#ff0000", "#269900"]) or [])
+        ]
+        if sta4cad_tespit.get("#ff0000") == "yoksay" and _sta4cad_deseni_yogun_mu(
+            kisa_cizgi, toplam_cizgi, ayarlar
+        ):
+            if sta4cad_tespit != renk_esleme:
+                notlar.append(
+                    "Sta4CAD dolgu deseni algilandi: kirmizi/yesil hatch "
+                    "cizgileri blok/tarama deseni sayilarak yok sayildi. "
+                    "Buyuk kapali alanlar doseme olarak sezgisel tespit edilir; "
+                    "kolon/kiris/perde geometrisi bu PDF'te dolgu oldugundan "
+                    "guvenilir metraj cikmaz. Kesin sonuc icin DWG dosyasini "
+                    "veya Eslestirme sekmesini kullanin."
+                )
+            renk_esleme = sta4cad_tespit
+            sta4cad_pasif = True
+
         for tur_adi in ("lines", "rects", "curves"):
             for nesne in getattr(sayfa, tur_adi, []) or []:
                 kalinlik = float(nesne.get("linewidth") or 0.0)
@@ -177,7 +250,7 @@ def pdf_oku(yol: str | Path, ayarlar: Ayarlar) -> Cizim:
                 renk = renk_normalize(
                     nesne.get("stroking_color") or nesne.get("non_stroking_color")
                 )
-                katman = _katman_ata(renk, kalinlik, ayarlar)
+                katman = _katman_ata(renk, kalinlik, ayarlar, renk_esleme)
                 kapali = tur_adi == "rects" or bool(nesne.get("fill")) and len(
                     noktalar
                 ) >= 3
@@ -192,6 +265,8 @@ def pdf_oku(yol: str | Path, ayarlar: Ayarlar) -> Cizim:
                     )
                 )
 
+        donati_isaretli = 0
+        donati_toplam = 0
         if metin_oku:
             try:
                 kelimeler = sayfa.extract_words(
@@ -203,6 +278,9 @@ def pdf_oku(yol: str | Path, ayarlar: Ayarlar) -> Cizim:
             # eksen takimina getirmek icin sayfa yuksekliginden cikarilir.
             sayfa_yuksekligi = float(sayfa.height)
             for k in _kelimeleri_birlestir(kelimeler):
+                donati_toplam += 1
+                if _donati_etiketi_mi(str(k["text"])):
+                    donati_isaretli += 1
                 y_alt = sayfa_yuksekligi - float(k["bottom"])
                 varliklar.append(
                     HamVarlik(
@@ -215,6 +293,16 @@ def pdf_oku(yol: str | Path, ayarlar: Ayarlar) -> Cizim:
                         yazi_yuksekligi=float(k.get("height", 0.0)) * carpan,
                     )
                 )
+        if donati_toplam:
+            oran = donati_isaretli / donati_toplam
+            donati_esik = float(ayarlar.al("pdf.donati_etiket_orani", 0.10))
+            if oran >= donati_esik:
+                notlar.append(
+                    f"Paftadaki etiketlerin %{oran * 100:.0f} donati isareti "
+                    f"(ƒ/#/@/l=) iceriyor; bu bir donati/kiris detay paftasi "
+                    f"olabilir. Kalip metraji icin kalip planini (asmolen_klp "
+                    f"gibi) yukleyin."
+                )
 
     cizgi_sayisi = sum(1 for v in varliklar if v.tur != "metin")
     if cizgi_sayisi == 0:
@@ -223,12 +311,20 @@ def pdf_oku(yol: str | Path, ayarlar: Ayarlar) -> Cizim:
             f"(goruntu) olabilir. Taranmis paftadan metraj cikarilamaz; "
             f"CAD dosyasini (DWG/DXF) veya vektorel PDF ciktisini kullanin."
         )
-    if not ayarlar.al("pdf.renk_esleme"):
+    if not renk_esleme:
         notlar.append(
             "pdf.renk_esleme bos; tum cizgiler sezgisel havuza dustu. "
             "Dogruluk icin `hakedis pdf-incele` ile renkleri gorup esleme "
             "tanimlayin."
         )
+
+    nitelikler: dict = {}
+    if sta4cad_pasif:
+        nitelikler["sta4cad"] = True
+        nitelikler["sta4cad_sadece_doseme"] = True
+        # Geriye donuk uyumluluk (eski asmolen anahtari)
+        nitelikler["asmolen"] = True
+        nitelikler["asmolen_sadece_doseme"] = True
 
     return Cizim(
         varliklar=varliklar,
@@ -236,6 +332,14 @@ def pdf_oku(yol: str | Path, ayarlar: Ayarlar) -> Cizim:
         birim="m",
         olcek=carpan,
         notlar=notlar,
+        nitelikler=nitelikler,
+    )
+
+
+def _donati_etiketi_mi(metin: str) -> bool:
+    """Donati (demir) etiketi olup olmadigini sezdirir."""
+    return any(ch in metin for ch in ("ƒ", "ø", "∅", "#", "@")) or bool(
+        re.search(r"\bl\s*=", metin)
     )
 
 
@@ -326,3 +430,55 @@ def pdf_incele(yol: str | Path, sayfa_no: int = 1) -> dict:
     satirlar.sort(key=lambda s: -s["adet"])
     bilgi["renkler"] = satirlar
     return bilgi
+
+
+def renk_esleme_adaylari(yol: str | Path, sayfa_no: int = 1) -> list[dict]:
+    """renk_esleme arayuzu icin renk bazinda aday listesi uretir.
+
+    pdf_incele'den farkli olarak kalinlik yerine RENK bazinda gruplar; cunku
+    pdf.renk_esleme anahtari renktir. Her aday: anahtar (hex renk), adet,
+    toplam uzunluk (pt), karsilasilan kalinliklar ve turler.
+    """
+    import pdfplumber
+
+    p = Path(yol)
+    gruplar: dict[str, dict[str, Any]] = {}
+    with pdfplumber.open(str(p)) as pdf:
+        if sayfa_no < 1 or sayfa_no > len(pdf.pages):
+            raise ValueError(f"Sayfa {sayfa_no} yok; PDF {len(pdf.pages)} sayfa.")
+        sayfa = pdf.pages[sayfa_no - 1]
+        for tur_adi in ("lines", "rects", "curves"):
+            for nesne in getattr(sayfa, tur_adi, []) or []:
+                renk = renk_normalize(
+                    nesne.get("stroking_color") or nesne.get("non_stroking_color")
+                )
+                kalinlik = round(float(nesne.get("linewidth") or 0.0), 2)
+                kutu = gruplar.setdefault(
+                    renk,
+                    {"renk": renk, "adet": 0, "toplam_pt": 0.0, "kalinliklar": set(), "turler": set()},
+                )
+                kutu["adet"] += 1
+                kutu["kalinliklar"].add(kalinlik)
+                kutu["turler"].add(tur_adi)
+                try:
+                    kutu["toplam_pt"] += abs(
+                        float(nesne["x1"]) - float(nesne["x0"])
+                    ) + abs(float(nesne["y1"]) - float(nesne["y0"]))
+                except Exception:  # pragma: no cover
+                    pass
+
+    adaylar = []
+    for kutu in gruplar.values():
+        adaylar.append(
+            {
+                "anahtar": kutu["renk"],
+                "adet": kutu["adet"],
+                "toplam_pt": round(kutu["toplam_pt"], 1),
+                "kalinliklar": ",".join(
+                    f"{k:g}" for k in sorted(kutu["kalinliklar"])
+                ),
+                "turler": ",".join(sorted(kutu["turler"])),
+            }
+        )
+    adaylar.sort(key=lambda a: -a["adet"])
+    return adaylar

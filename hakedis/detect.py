@@ -403,7 +403,19 @@ def elemanlari_tespit_et(
 
     # --- Sezgisel havuz ---------------------------------------------------
     if "sezgisel" in gruplar:
-        elemanlar.extend(_sezgisel_tespit(gruplar["sezgisel"], ayarlar))
+        sadece_doseme = bool(
+            cizim.nitelikler.get("sta4cad_sadece_doseme")
+            or cizim.nitelikler.get("asmolen_sadece_doseme")
+        )
+        if sadece_doseme:
+            uyarilar.append(
+                "Sta4CAD dolgu deseni: kirmizi/yesil hatch yoksayildi ve "
+                "kolon-perde sezgisel tespiti guvenilmez oldugu icin "
+                "yalnizca doseme (buyuk kapali alan) metraji uretildi. "
+                "Kolon/kiris detaylari icin DWG dosyasini veya Eslestirme "
+                "sekmesindeki renk eslemesini kullanin."
+            )
+        elemanlar.extend(_sezgisel_tespit(gruplar["sezgisel"], ayarlar, sadece_doseme))
 
     # --- Kirislerin net acikligi -----------------------------------------
     if bool(ayarlar.al("metraj.kiris_net_aciklik", True)):
@@ -424,7 +436,9 @@ def elemanlari_tespit_et(
     return elemanlar, uyarilar
 
 
-def _sezgisel_tespit(varliklar: list[HamVarlik], ayarlar: Ayarlar) -> list[Eleman]:
+def _sezgisel_tespit(
+    varliklar: list[HamVarlik], ayarlar: Ayarlar, sadece_doseme: bool = False
+) -> list[Eleman]:
     """Katman bilgisi olmadan bicimden eleman cikarimi (PDF ve duzensiz DXF)."""
     elemanlar: list[Eleman] = []
     min_kenar = float(ayarlar.al("sezgisel.kolon_min_kenar", 0.20))
@@ -442,7 +456,7 @@ def _sezgisel_tespit(varliklar: list[HamVarlik], ayarlar: Ayarlar) -> list[Elema
             e.guven = 0.5
             e.not_ekle("Sezgisel tespit: buyuk kapali alan doseme sayildi.")
             elemanlar.append(e)
-        elif min_kenar <= dik.en <= max_kenar:
+        elif not sadece_doseme and min_kenar <= dik.en <= max_kenar:
             tip = _kolon_mu_perde_mi(cevre, ayarlar)
             e = (
                 _kolon_elemani(cevre, katman, ayarlar)

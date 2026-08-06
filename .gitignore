@@ -12,3 +12,5 @@ venv/
 *.kontrol.svg
 *.metraj.json
 ornek/kalip_plani.dxf
+
+.DS_Store
