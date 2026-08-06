@@ -149,6 +149,7 @@ def _json_yaz(sonuc, hedef: Path) -> None:
                 "yukseklik": s.yukseklik,
                 "alan": s.alan,
                 "hacim": s.hacim,
+                "demir": s.kg,
                 "birim": s.birim,
                 "formul": s.formul,
                 "dusum": s.dusum_mu,
@@ -320,6 +321,93 @@ def komut_dogrula(args) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _toplu_isleri_hazirla(
+    args, temel
+) -> list[tuple[str, str, object]]:
+    """Toplu calismada her kat icin (kat_adi, dosya, ayarlar) uretir.
+
+    Iki yol vardir:
+      - `--paftalar "1:Giris,2:1.Kat"` : tek cok sayfali PDF'in sayfalari
+      - coklu dosya + `--kat-adlari`    : her dosya ayri kat
+    """
+    paftalar = getattr(args, "paftalar", None)
+    if paftalar:
+        isler: list[tuple[str, str, object]] = []
+        for parca in paftalar.split(","):
+            parca = parca.strip()
+            if not parca:
+                continue
+            if ":" not in parca:
+                raise SystemExit(
+                    f"--paftalar bicimi hatali: {parca!r}. Beklenen: "
+                    "1:Giris,2:1.Kat"
+                )
+            sayfa, kat = parca.split(":", 1)
+            kat = kat.strip() or f"Sayfa {sayfa}"
+            ayarlar = temel.guncelle(kat_adi=kat)
+            ayarlar.ham.setdefault("pdf", {})["sayfa"] = int(sayfa)
+            isler.append((kat, args.dosyalar[0], ayarlar))
+        return isler
+
+    katlar = list(getattr(args, "kat_adlari", None) or [])
+    isler = []
+    for i, dosya in enumerate(args.dosyalar):
+        kat = katlar[i] if i < len(katlar) else Path(dosya).stem
+        ayarlar = temel.guncelle(kat_adi=kat)
+        isler.append((kat, dosya, ayarlar))
+    return isler
+
+
+def komut_toplu(args) -> int:
+    """Cok katli / cok paftali metraj: birden fazla dosya veya PDF sayfasi."""
+    from hakedis.metraj import plandan_metraj
+    from hakedis.report import excel_yaz_toplu, konsol_ozeti_toplu
+
+    temel = _ayarlari_hazirla(args)
+    isler = _toplu_isleri_hazirla(args, temel)
+
+    sonuclar: list = []
+    for kat, dosya, ayarlar in isler:
+        print(f"[toplu] {kat}: {dosya} ...", file=sys.stderr)
+        sonuc, _ = plandan_metraj(dosya, ayarlar)
+        sonuclar.append(sonuc)
+
+    print(konsol_ozeti_toplu(sonuclar))
+
+    kaynak = Path(args.dosyalar[0])
+    cikti = Path(args.cikti) if args.cikti else kaynak.with_suffix(".toplu.xlsx")
+    excel_yaz_toplu(sonuclar, cikti)
+    print(f"\nToplu metraj cetveli yazildi : {cikti}")
+
+    if args.json:
+        _toplu_json_yaz(sonuclar, Path(args.json))
+        print(f"JSON ciktisi yazildi   : {args.json}")
+    return 0
+
+
+def _toplu_json_yaz(sonuclar, hedef: Path) -> None:
+    from hakedis.metraj import sonuclari_birlestir
+
+    birlesik = sonuclari_birlestir(sonuclar)
+    veri = {
+        "tur": "toplu",
+        "katlar": [
+            {
+                "kat": s.kat,
+                "kaynak_dosya": s.kaynak_dosya,
+                "ozet": s.ozet(),
+            }
+            for s in sonuclar
+        ],
+        "toplam": birlesik.ozet(),
+        "uyarilar": birlesik.uyarilar,
+    }
+    hedef.parent.mkdir(parents=True, exist_ok=True)
+    hedef.write_text(
+        json.dumps(veri, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
 def olustur_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="hakedis",
@@ -337,6 +425,10 @@ Tipik kullanim:
   hakedis metraj plan.dwg --config ofis.yml --kat "3. Normal Kat"
   hakedis pdf-incele plan.pdf              # PDF renklerini gor
   hakedis metraj plan.pdf --olcek 1/50 --kalibre 340.5:6.00
+
+Cok katli / cok paftali:
+  hakedis toplu gir.dxf kat1.dxf --kat-adlari "Giris" "1. Kat"
+  hakedis toplu plan.pdf --paftalar "1:Giris,2:1.Kat,3:2.Kat"
 """,
     )
     p.add_argument("--version", action="version", version=f"hakedis {__version__}")
@@ -373,6 +465,53 @@ Tipik kullanim:
         help="Uyari varsa cikis kodu 1 dondur (otomasyon icin)",
     )
     m.set_defaults(func=komut_metraj)
+
+    t = alt.add_parser(
+        "toplu",
+        help="Cok katli/paftali metraj: coklu dosya veya cok sayfali PDF",
+    )
+    t.add_argument(
+        "dosyalar", nargs="+", help="Kat/pafta dosyalari (.dwg / .dxf / .pdf)"
+    )
+    t.add_argument(
+        "--kat-adlari",
+        nargs="*",
+        default=[],
+        help="Dosyalarla sirayla eslesen kat adlari (verilmezse dosya adi kullanilir)",
+    )
+    t.add_argument(
+        "--paftalar",
+        help=(
+            "Cok sayfali PDF icin sayfa-kat eslemesi, ornek: "
+            "'1:Giris Kat,2:1.Normal Kat'"
+        ),
+    )
+    t.add_argument("--config", "-c", help="Ofis yapilandirma dosyasi (YAML)", default=None)
+    t.add_argument(
+        "--birim",
+        choices=["mm", "cm", "m"],
+        help="Cizim birimi (DXF basligindaki degeri ezer)",
+    )
+    t.add_argument(
+        "--kat-yuksekligi",
+        dest="kat_yuksekligi",
+        type=float,
+        help="Kat yuksekligi (m), varsayilan 3.00",
+    )
+    t.add_argument(
+        "--doseme-kalinligi",
+        dest="doseme_kalinligi",
+        type=float,
+        help="Doseme kalinligi (m), varsayilan 0.15",
+    )
+    t.add_argument("--olcek", help="PDF pafta olcegi (ornek: 1/50)")
+    t.add_argument(
+        "--kalibre",
+        help="PDF iki nokta kalibrasyonu: PDF_MESAFE:GERCEK_MESAFE",
+    )
+    t.add_argument("--cikti", "-o", help="Excel cikti yolu (.xlsx)")
+    t.add_argument("--json", help="Sonucu JSON olarak da yaz")
+    t.set_defaults(func=komut_toplu)
 
     k = alt.add_parser("katmanlar", help="Cizimdeki katmanlari ve eslemeleri listele")
     _ortak_argumanlar(k)

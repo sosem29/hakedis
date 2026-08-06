@@ -4,9 +4,16 @@ Her eleman icin beton (m3) ve kalip (m2) miktarlari, olcunun nasil
 alindigini gosteren kirilim satirlariyla birlikte uretilir. Amac sadece
 sonucu degil, denetlenebilir olcuyu vermektir: kontrol muhendisi her
 sayinin nereden geldigini satirda gorebilmelidir.
+
+Istege bagli ek kalemler (yapilandirma ile acilir):
+  - donati.aktif  : beton hacmi uzerinden YAKLASIK demir (kg) satirlari
+  - merdiven.riht/basamak : merdiven egim katsayisi
+  - doseme.tip    : guseli/dişli ve mantar (kirissiz) doseme kurallari
 """
 
 from __future__ import annotations
+
+import math
 
 from hakedis.config import Ayarlar
 from hakedis.geometry import (
@@ -31,6 +38,39 @@ from hakedis.model import (
 
 def _y(deger: float, basamak: int = 3) -> float:
     return round(deger + 0.0, basamak)
+
+
+def _donati_satiri(
+    e: Eleman, hacim: float, ayarlar: Ayarlar
+) -> KirikOlcuSatiri | None:
+    """Beton hacmi uzerinden yaklasik demir (kg) satiri uretir.
+
+    Bu kalem KATSAYI esaslidir; donati cizimi okunmaz. Ofis ortalamasi
+    katsayilar yapilandirmadan gelir ve sonuc her zaman yaklasiktir.
+    """
+    if not bool(ayarlar.al("donati.aktif", False)):
+        return None
+    anahtar = e.tip.value.lower()
+    katsayi = float(ayarlar.al(f"donati.katsayilar.{anahtar}", 0.0) or 0.0)
+    if katsayi <= 0 or hacim <= 1e-9:
+        return None
+    kg = hacim * katsayi
+    return KirikOlcuSatiri(
+        poz=ayarlar.poz("demir"),
+        eleman_adi=e.ad,
+        tip=e.tip,
+        tanim=f"Yaklasik demir ({katsayi:g} kg/m3) - KATSAYI",
+        benzer=1,
+        hacim=_y(hacim),
+        kg=_y(kg),
+        birim="kg",
+        formul=f"V={hacim:.3f} m3 x {katsayi:g} kg/m3 = {kg:.2f} kg",
+        kat=e.kat,
+        detay=[
+            f"YAKLASIK: beton hacmi {hacim:.3f} m3 x ofis katsayisi "
+            f"{katsayi:g} kg/m3. Demir plani okunmaz; deger tecrubeye dayanir."
+        ],
+    )
 
 
 def _net_yukseklik(ayarlar: Ayarlar) -> tuple[float, str]:
@@ -99,7 +139,11 @@ def _kolon_satirlari(
         kat=kat,
         detay=list(detay),
     )
-    satirlar = [beton, kalip]
+    satirlar = [beton]
+    demir = _donati_satiri(e, A * H, ayarlar)
+    if demir is not None:
+        satirlar.append(demir)
+    satirlar.append(kalip)
 
     if bool(ayarlar.al("metraj.kolon_kalibindan_kiris_dus", True)):
         dus = _mesnet_kiris_dusumu(e, kirisler, ayarlar)
@@ -257,7 +301,11 @@ def _perde_satirlari(
         kat=kat,
         detay=kalip_detay,
     )
-    satirlar = [beton, kalip]
+    satirlar = [beton]
+    demir = _donati_satiri(e, toplam_L * t * H, ayarlar)
+    if demir is not None:
+        satirlar.append(demir)
+    satirlar.append(kalip)
 
     if bool(ayarlar.al("metraj.kolon_kalibindan_kiris_dus", True)):
         dus = _mesnet_kiris_dusumu(e, kirisler, ayarlar)
@@ -355,7 +403,8 @@ def _kiris_satirlari(e: Eleman, ayarlar: Ayarlar) -> list[KirikOlcuSatiri]:
             f"Yan kalip = 2 x {yan_h:.2f} x {toplam_L:.3f} = {yan:.3f} m2",
         ],
     )
-    return [beton, kalip]
+    demir = _donati_satiri(e, b * beton_h * toplam_L, ayarlar)
+    return [beton] + ([demir] if demir is not None else []) + [kalip]
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +440,22 @@ def _doseme_satirlari(
     e.olculer["net_alan"] = _y(net, 4)
     e.olculer["bosluk_alani"] = _y(bosluk_alani, 4)
 
+    tip = str(ayarlar.al("doseme.tip", "normal") or "normal").lower()
+    e.olculer["doseme_tipi"] = tip
+    beton_hacim = net * t
+    beton_formul = f"A={net:.4f} m2 x t={t:.2f} m"
+    beton_detay = list(detay)
+
+    if tip == "guseli":
+        k = float(ayarlar.al("doseme.guseli_hacim_katsayisi", 1.35) or 1.35)
+        if abs(k - 1.0) > 1e-6:
+            beton_hacim *= k
+            beton_formul = f"A={net:.4f} m2 x t={t:.2f} m x guseli k={k:.2f}"
+            beton_detay = beton_detay + [
+                f"GUSELI/DiSLI doseme: dişler dahil hacim katsayisi k={k:.2f}",
+                f"Beton = {net:.4f} x {t:.2f} x {k:.2f} = {beton_hacim:.4f} m3",
+            ]
+
     satirlar = [
         KirikOlcuSatiri(
             poz=ayarlar.poz("doseme_beton"),
@@ -400,13 +465,45 @@ def _doseme_satirlari(
             benzer=1,
             alan=_y(net, 4),
             yukseklik=_y(t),
-            hacim=_y(net * t),
+            hacim=_y(beton_hacim),
             birim="m3",
-            formul=f"A={net:.4f} m2 x t={t:.2f} m",
+            formul=beton_formul,
             kat=kat,
-            detay=list(detay),
+            detay=beton_detay,
         )
     ]
+    demir = _donati_satiri(e, beton_hacim, ayarlar)
+    if demir is not None:
+        satirlar.append(demir)
+
+    if tip == "mantar":
+        artis = float(ayarlar.al("doseme.mantar_kolon_ustu_artisi", 0.0) or 0.0)
+        baslik = float(ayarlar.al("doseme.mantar_kolon_baslik_alani", 0.0) or 0.0)
+        kolonlar = [
+            m
+            for m in (mesnetler or [])
+            if len(m.cevre) >= 3 and any(nokta_icinde_mi(p, e.cevre) for p in m.cevre)
+        ]
+        if artis > 0 and baslik > 0 and kolonlar:
+            ilave = len(kolonlar) * baslik * artis
+            satirlar.append(
+                KirikOlcuSatiri(
+                    poz=ayarlar.poz("doseme_beton"),
+                    eleman_adi=e.ad,
+                    tip=ElemanTipi.DOSEME,
+                    tanim="  (+) Mantar kolon üstü plak ilavesi",
+                    benzer=1,
+                    hacim=_y(ilave),
+                    birim="m3",
+                    formul=f"{len(kolonlar)} kolon x {baslik:.2f} m2 x {artis:.2f} m",
+                    kat=kat,
+                    detay=[
+                        "KIRISSIZ (mantar) doseme: kolon üstü plak artirimi.",
+                        f"  {len(kolonlar)} kolon x baslik alani {baslik:.2f} m2 "
+                        f"x artis {artis:.2f} m = {ilave:.4f} m3",
+                    ],
+                )
+            )
 
     kalip_alani = net
     kalip_detay = list(detay)
@@ -463,40 +560,77 @@ def _doseme_satirlari(
     return satirlar
 
 
+def _merdiven_egim_katsayisi(ayarlar: Ayarlar) -> tuple[float, str]:
+    """Merdiven egim katsayisini belirler.
+
+    k = sqrt(1 + (riht/basamak)^2). Dogrudan 'merdiven.egim_katsayisi'
+    verildiyse o kullanilir; yoksa riht/basamaktan hesaplanir. Ikisi de yoksa
+    k=1.0 (plan izdusumu) dondurulur.
+    """
+    dogrudan = float(ayarlar.al("merdiven.egim_katsayisi", 0.0) or 0.0)
+    if dogrudan > 0:
+        return dogrudan, f"egim katsayisi k={dogrudan:.3f} (dogrudan verildi)"
+    riht = float(ayarlar.al("merdiven.riht", 0.175) or 0.0)
+    basamak = float(ayarlar.al("merdiven.basamak", 0.28) or 0.0)
+    if basamak > 0 and riht > 0:
+        k = math.sqrt(1.0 + (riht / basamak) ** 2)
+        return k, (
+            f"egim katsayisi k=sqrt(1+(riht/basamak)^2)="
+            f"sqrt(1+({riht:.3f}/{basamak:.3f})^2)={k:.3f}"
+        )
+    return 1.0, "egim katsayisi yok (plan izdusumu)"
+
+
 def _merdiven_satirlari(e: Eleman, ayarlar: Ayarlar) -> list[KirikOlcuSatiri]:
-    t = e.olculer.get("t", ayarlar.doseme_kalinligi)
+    t = e.olculer.get("t") or float(ayarlar.al("merdiven.kalinlik", 0.14) or 0.14)
     a = alan(e.cevre)
+    k, k_aciklama = _merdiven_egim_katsayisi(ayarlar)
     detay = ["Kirik olcu (plan izdusumu kose koordinatlari):"]
-    detay += [f"  {i:>2}. kose: ({p.x:.3f}, {p.y:.3f})" for i, p in enumerate(e.cevre, 1)]
-    detay.append(f"Plan alani = {a:.4f} m2 (egim katsayisi UYGULANMADI)")
-    return [
+    detay += [
+        f"  {i:>2}. kose: ({p.x:.3f}, {p.y:.3f})" for i, p in enumerate(e.cevre, 1)
+    ]
+    detay.append(f"Plan alani = {a:.4f} m2")
+    detay.append(f"Ekim: {k_aciklama}")
+    if k > 1.0:
+        detay.append(
+            "  Not: katsayi TUM plan alanina uygulanir (sahanliklar dahil); "
+            "kesit/basamak bilgisiyle elle kontrol edin."
+        )
+    hacim = a * k * t
+    satirlar = [
         KirikOlcuSatiri(
             poz=ayarlar.poz("merdiven_beton"),
             eleman_adi=e.ad,
             tip=ElemanTipi.MERDIVEN,
-            tanim=f"Merdiven betonu t={t:.2f} (plan izdusumu)",
+            tanim=f"Merdiven betonu t={t:.2f} (k={k:.2f})",
             benzer=1,
             alan=_y(a, 4),
             yukseklik=_y(t),
-            hacim=_y(a * t),
+            hacim=_y(hacim),
             birim="m3",
-            formul=f"A={a:.4f} x t={t:.2f}",
+            formul=f"A={a:.4f} m2 x k={k:.2f} x t={t:.2f} m",
             kat=e.kat,
             detay=detay,
-        ),
+        )
+    ]
+    demir = _donati_satiri(e, hacim, ayarlar)
+    if demir is not None:
+        satirlar.append(demir)
+    satirlar.append(
         KirikOlcuSatiri(
             poz=ayarlar.poz("merdiven_kalip"),
             eleman_adi=e.ad,
             tip=ElemanTipi.MERDIVEN,
-            tanim="Merdiven kalibi (plan izdusumu)",
+            tanim=f"Merdiven kalibi (k={k:.2f})",
             benzer=1,
-            alan=_y(a, 4),
+            alan=_y(a * k, 4),
             birim="m2",
-            formul=f"A={a:.4f} m2",
+            formul=f"A={a:.4f} m2 x k={k:.2f}",
             kat=e.kat,
             detay=detay,
-        ),
-    ]
+        )
+    )
+    return satirlar
 
 
 # ---------------------------------------------------------------------------
@@ -551,6 +685,19 @@ def metraj_hesapla(
         },
     )
 
+    if bool(ayarlar.al("donati.aktif", False)):
+        sonuc.uyari_ekle(
+            "Donati metraji KATSAYI esasli YAKLASIK degerdir; donati plani "
+            "okunmaz. Demir (kg) satirlarini ofis katsayilariniza gore "
+            "dogrulayin."
+        )
+    doseme_tipi = str(ayarlar.al("doseme.tip", "normal") or "normal").lower()
+    if doseme_tipi != "normal":
+        sonuc.uyari_ekle(
+            f"Doseme tipi '{doseme_tipi}' olarak islendi. Guseli/mantar "
+            "kurallari yaklasiktir; kesit/detay planiyla elle kontrol edin."
+        )
+
     for e in elemanlar:
         if e.guven < 0.7:
             sonuc.uyari_ekle(
@@ -572,3 +719,22 @@ def plandan_metraj(
     sonuc = metraj_hesapla(elemanlar, ayarlar, uyarilar)
     sonuc.kaynak_dosya = str(dosya)
     return sonuc, cizim
+
+
+def sonuclari_birlestir(sonuclar: list[MetrajSonucu]) -> MetrajSonucu:
+    """Cok katli/paftali calismada kat sonuclarini tek sonucta toplar.
+
+    Satirlar ve elemanlar kendi kat adini tasir; toplu raporda kat bazli
+    kirilim ve genel toplam bu ortak modelden cikarilir.
+    """
+    if not sonuclar:
+        return MetrajSonucu(kat="TOPLAM")
+    birlesik = MetrajSonucu(
+        kat="TOPLAM",
+        kaynak_dosya=", ".join(s.kaynak_dosya for s in sonuclar if s.kaynak_dosya),
+        elemanlar=[e for s in sonuclar for e in s.elemanlar],
+        satirlar=[r for s in sonuclar for r in s.satirlar],
+        uyarilar=[f"[{s.kat or '?'}] {u}" for s in sonuclar for u in s.uyarilar],
+        parametreler=dict(sonuclar[0].parametreler),
+    )
+    return birlesik

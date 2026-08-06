@@ -26,6 +26,16 @@ K101   Kiriş betonu 0.25/0.50          0.998 m3   b=0.25 x (h-t)=0.35 x L=11.40
 | **Perde** | Karşılıklı yüz eşlemesiyle **orta eksen**; L/T/U perdelerde köşe kırılımı bulunur | Beton `L×t×H`, kalıp `2×L×H` + baş kalıpları |
 | **Kiriş** | Kapalı poligon *veya* iki paralel çizgi; **mesnetlerde kırılıp net açıklıklara** bölünür | Beton `b×(h−t)×L`, kalıp alt + 2 yan |
 | **Döşeme** | Köşe koordinatlarından Gauss alanı, boşluklar düşülür | Beton `A×t`, tabla kalıbı − (kiriş+kolon+perde ayak izi **birleşimi**) |
+| **Merdiven** | Plan izdüşümü kapalı alanı | Beton `A×k×t`, kalıp `A×k` — `k` rıht/basamaktan veya doğrudan |
+
+İsteğe bağlı (yapılandırmadan açılır) ek kurallar:
+
+- **Yaklaşık demir (donatı):** `donati.aktif` ile her elemanın beton satırı
+  yanına `kg` satırı eklenir; katsayılar ofis ortalamanızdan (`kg/m³`).
+- **Guseli/dişli ve mantar (kirişsiz) döşeme:** `doseme.tip` ile beton hacmine
+  özel kural uygulanır; çıktıya elle kontrol uyarısı düşer.
+- **Merdiven eğim katsayısı:** `merdiven.riht/basamak` verilirse
+  `k = √(1+(rıht/basamak)²)` uygulanır.
 
 Kritik iki nokta doğru kurgulanmıştır:
 
@@ -72,6 +82,11 @@ hakedis config-yaz --cikti ofis.yml
 # 4. Metrajı çıkarın
 hakedis metraj plan.dwg --config ofis.yml \
     --kat "3. Normal Kat" --kat-yuksekligi 3.20 --doseme-kalinligi 0.15
+
+# 5. Çok katlı / çok paftalı iş için
+hakedis toplu gir.dxf kat1.dxf kat2.dxf \
+    --kat-adlari "Giriş Kat" "1. Normal Kat" "2. Normal Kat"
+hakedis toplu plan.pdf --paftalar "1:Giriş,2:1.Kat,3:2.Kat" --config ofis.yml
 ```
 
 Çıktılar:
@@ -79,6 +94,7 @@ hakedis metraj plan.dwg --config ofis.yml \
 - `plan.metraj.xlsx` — Özet / Metraj Cetveli / **Kırık Ölçü** / Elemanlar / Uyarılar
 - `plan.metraj.kontrol.svg` — **kontrol paftası**
 - `--json` ile makine okunur çıktı (başka sisteme aktarım için)
+- `toplu` için `plan.toplu.xlsx` — **Kat Ozeti** / Metraj Cetveli / Kırık Ölçü / Elemanlar / Uyarılar
 
 ### Kontrol paftası
 
@@ -118,8 +134,29 @@ metraj:                        # ofis pratiğinize göre açıp kapatın
   kiris_betonu_doseme_dusumu: true
   doseme_kalibindan_mesnet_dus: true
 
+doseme:                        # özel döşeme tipleri (yaklaşık kurallar)
+  tip: normal                  # normal | guseli | mantar
+  guseli_hacim_katsayisi: 1.35
+  mantar_kolon_ustu_artisi: 0.05
+  mantar_kolon_baslik_alani: 1.00
+
+merdiven:                      # eğim katsayısı: k = √(1+(rıht/basamak)²)
+  riht: 0.175
+  basamak: 0.28
+  kalinlik: 0.14
+
+donati:                        # YAKLAŞIK demir metrajı (beton m3 başına kg)
+  aktif: false
+  katsayilar:
+    kolon: 110
+    perde: 90
+    kiris: 120
+    doseme: 95
+    merdiven: 70
+
 pozlar:                        # kendi birim fiyat pozlarınız
   kolon_beton: "16.058/1-K"
+  demir: "18.001"
 ```
 
 Etiket okuma `K101 25/50`, `S01 30x60`, `P1 25`, `TD=15`, `K-12 (30/70)`
@@ -160,14 +197,20 @@ hata verir.
 
 Bilerek yapılmayanlar — metraja güvenebilmeniz için açıkça yazılmıştır:
 
-- **Donatı metrajı yoktur.** Sistem kalıp planındaki beton ve kalıp
-  miktarlarını çıkarır; demir metrajı kapsam dışıdır.
-- **Merdiven** plan izdüşümünden hesaplanır, eğim katsayısı uygulanmaz;
-  çıktıda düşük güvenle işaretlenir ve elle kontrol gerektirir.
-- **Guseli/dişli döşeme, kirişsiz döşeme (mantar), eğrisel elemanlar** için
-  özel kural yoktur; bunlar yaklaşık çıkar.
-- Tek kat, tek pafta işlenir. Çok katlı iş için her katı ayrı çalıştırıp
-  `--kat` ile adlandırın.
+- **Donatı metrajı yoktur.** Sistem beton/demir planından donatı çizimini
+  okumaz. `donati.aktif` ile beton hacmi üzerinden **katsayı esaslı yaklaşık**
+  demir (kg) üretilebilir; bu değer kontrol paftası değil, ön büyüklük
+  hesabıdır.
+- **Merdiven** plan izdüşümünden hesaplanır; eğim katsayısı rıht/basamaktan
+  uygulanır ama tüm plan alanına (sahanlıklar dahil) uygulandığı için
+  yaklaşıktır, düşük güvenle işaretlenir.
+- **Guseli/dişli döşeme** ve **kirişsiz döşeme (mantar)** için katsayı esaslı
+  yaklaşık kurallar vardır; gerçek diş/guse geometrisi okunmaz, elle kontrol
+  gerekir.
+- **Eğrisel elemanlar** için özel kural yoktur; bunlar yaklaşık çıkar.
+- Tek pafta tek çalışmada işlenir. Çok katlı iş için `toplu` komutu (çoklu
+  dosya veya çok sayfalı PDF) her katı `--kat-adlari` / `--paftalar` ile
+  adlandırıp ortak Excel ve JSON üretir.
 
 Sistem çıktısı **kontrol edilmiş metraj değil, kontrol edilecek metrajdır.**
 Kontrol paftasını ve Uyarılar sayfasını okumadan hakedişe girmeyin.
@@ -176,7 +219,7 @@ Kontrol paftasını ve Uyarılar sayfasını okumadan hakedişe girmeyin.
 
 ```bash
 pip install -e ".[test]"
-pytest -q          # 77 test: geometri, etiket, uçtan uca DXF ve PDF
+pytest -q          # 94 test: geometri, etiket, uçtan uca DXF/PDF + yeni özellikler
 ```
 
 Uçtan uca testlerdeki beklenen değerler elle hesaplanmıştır, böylece metraj

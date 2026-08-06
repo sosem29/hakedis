@@ -25,6 +25,21 @@ kat:
   # Varsayilan perde kalinligi (geometriden okunamazsa), m
   perde_kalinligi: 0.25
 
+# --- Merdiven ----------------------------------------------------------------
+# Merdiven metraji plan izdusumunden alinir; egim katsayisi istenirse burada
+# rıht/basamak verin. k = sqrt(1 + (rıht/basamak)^2) uygulanir. Sahanliklar da
+# dahil oldugu icin sonuc yaklasiktir; cikti dusuk guvenle isaretlenir.
+merdiven:
+  # Rıht yuksekligi (m). 0 verilirse egim katsayisi uygulanmaz.
+  riht: 0.175
+  # Basamak genisligi (m). 0 ise katsayi hesaplanamaz.
+  basamak: 0.28
+  # Dogrudan egim katsayisi vermek isterseniz (hesaplananin uzerine biner):
+  #   egim_katsayisi: 1.18
+  egim_katsayisi: 0
+  # Merdiven plak/basamak kalinligi (etiketten okunamazsa), m
+  kalinlik: 0.14
+
 # --- Katman esleme -----------------------------------------------------------
 katmanlar:
   kolon:
@@ -126,6 +141,21 @@ etiket:
     ad:
       - '^(?P<ad>[SKPD][-_ ]?\d{1,4}[A-Za-z]?)$'
 
+# --- Doseme tipleri ----------------------------------------------------------
+# Kalip planindaki doseme sirasiyla hangi sisteme ait? Bu bilgi beton
+# hacmine uygulanan ek kurallari belirler. "normal" disindaki tiplerde
+# ciktiya uyari dusurulur ve elle kontrol istenir.
+doseme:
+  tip: normal              # normal | guseli | mantar
+  # Guseli/dişli doseme: dişler (nervürler) betona eklenir. Dişlerin toplam
+  # kesit alaninin plan alanina orani kadar katsayi girin. Ornek: dişler
+  # tabla altini %35 besliyorsa 1.35.
+  guseli_hacim_katsayisi: 1.35
+  # Mantar (kirissiz) doseme: kolon ustu plak (drop panel) artirimi.
+  # Kolon basina artirilan hacim = mantar_kolon_baslik_alani x mantar_kolon_ustu_artisi
+  mantar_kolon_ustu_artisi: 0.05    # m - plak kalinligi artisi
+  mantar_kolon_baslik_alani: 1.00   # m2 - kolon ustu artis bolgesi
+
 # --- Metraj kurallari --------------------------------------------------------
 metraj:
   # Kolon/perde net yuksekligi = kat yuksekligi - doseme kalinligi
@@ -147,6 +177,20 @@ metraj:
   # Yuvarlama basamagi (rapor icin)
   yuvarlama: 3
 
+# --- Yaklasik donati (demir) metraji -----------------------------------------
+# Sistem betonarme donatı cizimini OKUMAZ; bu katsayilar klasik "beton basina
+# demir" pratiğidir ve YAKLAŞIK değerdir. Aktifse her elemanin beton satirinin
+# yanina "kg" satiri eklenir ve cetvelde Demir (kg) sutunu dolar.
+donati:
+  aktif: false
+  # kg demir / m3 beton (ofis ortalamalarınızı girin)
+  katsayilar:
+    kolon: 110
+    perde: 90
+    kiris: 120
+    doseme: 95
+    merdiven: 70
+
 # --- Poz numaralari ----------------------------------------------------------
 # Kendi birim fiyat/poz sisteminize gore degistirin.
 pozlar:
@@ -160,6 +204,8 @@ pozlar:
   doseme_kalip: "21.011/D"
   merdiven_beton: "16.058/1-M"
   merdiven_kalip: "21.011/M"
+  # Yaklasik donati metraji icin tek poz (katsayi esasli)
+  demir: "18.001"
 
 # --- PDF'e ozel ayarlar ------------------------------------------------------
 pdf:

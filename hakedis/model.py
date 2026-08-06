@@ -161,6 +161,7 @@ class KirikOlcuSatiri:
     yukseklik: float | None = None
     alan: float | None = None
     hacim: float | None = None
+    kg: float | None = None  # yaklasik demir (donati) metraji, birim "kg"
     birim: str = ""
     formul: str = ""
     kat: str = ""
@@ -170,6 +171,8 @@ class KirikOlcuSatiri:
 
     @property
     def miktar(self) -> float:
+        if self.kg is not None:
+            return self.kg
         if self.hacim is not None:
             return self.hacim
         if self.alan is not None:
@@ -197,22 +200,26 @@ class MetrajSonucu:
         return [s for s in self.satirlar if s.tip == tip]
 
     def ozet(self) -> dict[str, dict[str, float]]:
-        """Tip bazinda beton (m3) / kalip (m2) / adet ozeti."""
+        """Tip bazinda beton (m3) / kalip (m2) / demir (kg) / adet ozeti."""
         out: dict[str, dict[str, float]] = {}
         for satir in self.satirlar:
             kutu = out.setdefault(
-                satir.tip.value, {"adet": 0.0, "beton_m3": 0.0, "kalip_m2": 0.0}
+                satir.tip.value,
+                {"adet": 0.0, "beton_m3": 0.0, "kalip_m2": 0.0, "demir_kg": 0.0},
             )
             isaret = -1.0 if satir.dusum_mu else 1.0
             if satir.birim == "m3":
                 kutu["beton_m3"] += isaret * (satir.hacim or 0.0)
             elif satir.birim == "m2":
                 kutu["kalip_m2"] += isaret * (satir.alan or 0.0)
+            elif satir.birim == "kg":
+                kutu["demir_kg"] += isaret * (satir.kg or 0.0)
         for tip in ElemanTipi:
             elemanlar = self.tipe_gore(tip)
             if elemanlar:
                 out.setdefault(
-                    tip.value, {"adet": 0.0, "beton_m3": 0.0, "kalip_m2": 0.0}
+                    tip.value,
+                    {"adet": 0.0, "beton_m3": 0.0, "kalip_m2": 0.0, "demir_kg": 0.0},
                 )["adet"] = float(len(elemanlar))
         return out
 

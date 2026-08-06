@@ -43,6 +43,7 @@ SUTUNLAR = [
     ("Yuks. (m)", 10),
     ("Alan (m2)", 12),
     ("Hacim (m3)", 12),
+    ("Demir (kg)", 12),
     ("Birim", 7),
     ("Olcu Aciklamasi (kirik olcu)", 52),
 ]
@@ -63,8 +64,8 @@ def _baslik_yaz(ws, sutunlar, satir: int = 1) -> int:
 def _sayfa_ozet(wb: Workbook, sonuc: MetrajSonucu) -> None:
     ws = wb.create_sheet("Ozet", 0)
     ws.column_dimensions["A"].width = 26
-    for h in "BCDE":
-        ws.column_dimensions[h].width = 16
+    for h in "BCDEF":
+        ws.column_dimensions[h].width = 14
 
     ws["A1"] = "KIRIK OLCU METRAJ OZETI"
     ws["A1"].font = Font(bold=True, size=14)
@@ -87,7 +88,7 @@ def _sayfa_ozet(wb: Workbook, sonuc: MetrajSonucu) -> None:
             satir += 1
 
     satir += 1
-    basliklar = ["Eleman Tipi", "Adet", "Beton (m3)", "Kalip (m2)"]
+    basliklar = ["Eleman Tipi", "Adet", "Beton (m3)", "Kalip (m2)", "Demir (kg)"]
     for i, b in enumerate(basliklar, start=1):
         h = ws.cell(row=satir, column=i, value=b)
         h.fill = BASLIK_DOLGU
@@ -96,21 +97,26 @@ def _sayfa_ozet(wb: Workbook, sonuc: MetrajSonucu) -> None:
     satir += 1
 
     ozet = sonuc.ozet()
-    beton_toplam = kalip_toplam = 0.0
+    beton_toplam = kalip_toplam = demir_toplam = 0.0
     for tip in ElemanTipi:
         k = ozet.get(tip.value)
-        if not k or (k["adet"] == 0 and k["beton_m3"] == 0 and k["kalip_m2"] == 0):
+        if not k or (
+            k["adet"] == 0 and k["beton_m3"] == 0 and k["kalip_m2"] == 0
+        ):
             continue
         ws.cell(row=satir, column=1, value=tip.value).border = CERCEVE
         ws.cell(row=satir, column=2, value=int(k["adet"])).border = CERCEVE
         ws.cell(row=satir, column=3, value=round(k["beton_m3"], 3)).border = CERCEVE
         ws.cell(row=satir, column=4, value=round(k["kalip_m2"], 3)).border = CERCEVE
+        ws.cell(row=satir, column=5, value=round(k["demir_kg"], 2)).border = CERCEVE
         beton_toplam += k["beton_m3"]
         kalip_toplam += k["kalip_m2"]
+        demir_toplam += k["demir_kg"]
         satir += 1
 
     for i, deger in enumerate(
-        ["TOPLAM", "", round(beton_toplam, 3), round(kalip_toplam, 3)], start=1
+        ["TOPLAM", "", round(beton_toplam, 3), round(kalip_toplam, 3), round(demir_toplam, 2)],
+        start=1,
     ):
         h = ws.cell(row=satir, column=i, value=deger)
         h.font = TOPLAM_YAZI
@@ -139,56 +145,75 @@ def _sayfa_cetvel(wb: Workbook, sonuc: MetrajSonucu) -> None:
         ElemanTipi.DOSEME,
         ElemanTipi.MERDIVEN,
     ]
-    for tip in sira:
-        satirlar = sonuc.satirlar_tipe_gore(tip)
-        if not satirlar:
-            continue
-        h = ws.cell(row=satir, column=1, value=f"{tip.value.upper()} METRAJI")
-        h.font = Font(bold=True, size=11)
-        h.fill = GRUP_DOLGU
-        for i in range(1, len(SUTUNLAR) + 1):
-            ws.cell(row=satir, column=i).fill = GRUP_DOLGU
-        satir += 1
-
-        beton = kalip = 0.0
-        for s in satirlar:
-            isaret = -1.0 if s.dusum_mu else 1.0
-            degerler = [
-                s.poz,
-                s.eleman_adi,
-                s.tanim,
-                s.benzer,
-                s.en,
-                s.boy,
-                s.yukseklik,
-                (isaret * s.alan) if s.alan is not None else None,
-                (isaret * s.hacim) if s.hacim is not None else None,
-                s.birim,
-                s.formul,
-            ]
-            for i, deger in enumerate(degerler, start=1):
-                h = ws.cell(row=satir, column=i, value=deger)
-                h.border = CERCEVE
-                if s.dusum_mu:
-                    h.font = DUSUM_YAZI
-                if i in (5, 6, 7, 8, 9):
-                    h.number_format = "0.000"
-            if s.birim == "m3":
-                beton += isaret * (s.hacim or 0.0)
-            elif s.birim == "m2":
-                kalip += isaret * (s.alan or 0.0)
+    # Kat gruplari: cok katli birlesik sonucta kat, sonra tip sirasiyla goster
+    kats = list(dict.fromkeys(s.kat for s in sonuc.satirlar if s.kat)) or [""]
+    for kat in kats:
+        kat_satirlari = [s for s in sonuc.satirlar if s.kat == kat]
+        if len(kats) > 1:
+            h = ws.cell(row=satir, column=1, value=f"KAT: {kat}")
+            h.font = Font(bold=True, size=11)
+            h.fill = BASLIK_DOLGU
+            for i in range(1, len(SUTUNLAR) + 1):
+                ws.cell(row=satir, column=i).fill = BASLIK_DOLGU
+            satir += 1
+        for tip in sira:
+            satirlar = [s for s in kat_satirlari if s.tip == tip]
+            if not satirlar:
+                continue
+            h = ws.cell(row=satir, column=1, value=f"{tip.value.upper()} METRAJI")
+            h.font = Font(bold=True, size=11)
+            h.fill = GRUP_DOLGU
+            for i in range(1, len(SUTUNLAR) + 1):
+                ws.cell(row=satir, column=i).fill = GRUP_DOLGU
             satir += 1
 
-        ws.cell(row=satir, column=3, value=f"{tip.value} ARA TOPLAM").font = TOPLAM_YAZI
-        ws.cell(row=satir, column=8, value=round(kalip, 3)).font = TOPLAM_YAZI
-        ws.cell(row=satir, column=9, value=round(beton, 3)).font = TOPLAM_YAZI
-        for i in range(1, len(SUTUNLAR) + 1):
-            h = ws.cell(row=satir, column=i)
-            h.fill = TOPLAM_DOLGU
-            h.border = CERCEVE
-            if i in (8, 9):
-                h.number_format = "0.000"
-        satir += 2
+            beton = kalip = demir = 0.0
+            for s in satirlar:
+                isaret = -1.0 if s.dusum_mu else 1.0
+                degerler = [
+                    s.poz,
+                    s.eleman_adi,
+                    s.tanim,
+                    s.benzer,
+                    s.en,
+                    s.boy,
+                    s.yukseklik,
+                    (isaret * s.alan) if s.alan is not None else None,
+                    (isaret * s.hacim) if s.hacim is not None else None,
+                    (isaret * s.kg) if s.kg is not None else None,
+                    s.birim,
+                    s.formul,
+                ]
+                for i, deger in enumerate(degerler, start=1):
+                    h = ws.cell(row=satir, column=i, value=deger)
+                    h.border = CERCEVE
+                    if s.dusum_mu:
+                        h.font = DUSUM_YAZI
+                    if i in (5, 6, 7, 8, 9):
+                        h.number_format = "0.000"
+                    if i == 10:
+                        h.number_format = "0.0"
+                if s.birim == "m3":
+                    beton += isaret * (s.hacim or 0.0)
+                elif s.birim == "m2":
+                    kalip += isaret * (s.alan or 0.0)
+                elif s.birim == "kg":
+                    demir += isaret * (s.kg or 0.0)
+                satir += 1
+
+            ws.cell(row=satir, column=3, value=f"{tip.value} ARA TOPLAM").font = TOPLAM_YAZI
+            ws.cell(row=satir, column=8, value=round(kalip, 3)).font = TOPLAM_YAZI
+            ws.cell(row=satir, column=9, value=round(beton, 3)).font = TOPLAM_YAZI
+            ws.cell(row=satir, column=10, value=round(demir, 2)).font = TOPLAM_YAZI
+            for i in range(1, len(SUTUNLAR) + 1):
+                h = ws.cell(row=satir, column=i)
+                h.fill = TOPLAM_DOLGU
+                h.border = CERCEVE
+                if i in (8, 9):
+                    h.number_format = "0.000"
+                if i == 10:
+                    h.number_format = "0.0"
+            satir += 2
 
 
 def _sayfa_kirik_olcu(wb: Workbook, sonuc: MetrajSonucu) -> None:
@@ -297,6 +322,116 @@ def excel_yaz(sonuc: MetrajSonucu, hedef: str | Path) -> Path:
     _sayfa_kirik_olcu(wb, sonuc)
     _sayfa_elemanlar(wb, sonuc)
     _sayfa_uyarilar(wb, sonuc)
+
+    hedef.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(str(hedef))
+    return hedef
+
+
+def _topla(satirlar) -> tuple[float, float, float]:
+    """Bir satir grubunun beton/kalip/demir toplamini dondurur."""
+    beton = kalip = demir = 0.0
+    for s in satirlar:
+        isaret = -1.0 if s.dusum_mu else 1.0
+        if s.birim == "m3":
+            beton += isaret * (s.hacim or 0.0)
+        elif s.birim == "m2":
+            kalip += isaret * (s.alan or 0.0)
+        elif s.birim == "kg":
+            demir += isaret * (s.kg or 0.0)
+    return beton, kalip, demir
+
+
+def _sayfa_kat_ozeti(wb: Workbook, sonuc: MetrajSonucu) -> None:
+    """Cok katli birlesik sonucta kat x eleman tipi ozetini yazar."""
+    ws = wb.create_sheet("Kat Ozeti", 0)
+    genislikler = {"A": 24, "B": 14, "C": 8, "D": 14, "E": 14, "F": 14}
+    for harf, g in genislikler.items():
+        ws.column_dimensions[harf].width = g
+
+    ws["A1"] = "KAT BAZINDA KIRIK OLCU METRAJ OZETI"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = f"Kaynak: {Path(sonuc.kaynak_dosya).name if sonuc.kaynak_dosya else ''}"
+
+    satir = 4
+    for i, b in enumerate(["Kat", "Eleman Tipi", "Adet", "Beton (m3)", "Kalip (m2)", "Demir (kg)"], start=1):
+        h = ws.cell(row=satir, column=i, value=b)
+        h.fill = BASLIK_DOLGU
+        h.font = BASLIK_YAZI
+        h.border = CERCEVE
+    satir += 1
+
+    kats = list(dict.fromkeys(s.kat for s in sonuc.satirlar if s.kat))
+    sira = [
+        ElemanTipi.KOLON,
+        ElemanTipi.PERDE,
+        ElemanTipi.KIRIS,
+        ElemanTipi.DOSEME,
+        ElemanTipi.MERDIVEN,
+    ]
+    if not kats:
+        return
+    for kat in kats:
+        kat_satirlari = [s for s in sonuc.satirlar if s.kat == kat]
+        kat_elemanlar = [e for e in sonuc.elemanlar if e.kat == kat]
+        for tip in sira:
+            grubu = [s for s in kat_satirlari if s.tip == tip]
+            if not grubu:
+                continue
+            beton, kalip, demir = _topla(grubu)
+            adet = sum(1 for e in kat_elemanlar if e.tip == tip)
+            degerler = [kat, tip.value, adet, round(beton, 3), round(kalip, 3), round(demir, 2)]
+            for i, deger in enumerate(degerler, start=1):
+                h = ws.cell(row=satir, column=i, value=deger)
+                h.border = CERCEVE
+                if i in (4, 5):
+                    h.number_format = "0.000"
+                if i == 6:
+                    h.number_format = "0.0"
+            satir += 1
+        bt, kt, dt = _topla(kat_satirlari)
+        for i, deger in enumerate([kat, "KAT TOPLAM", "", round(bt, 3), round(kt, 3), round(dt, 2)], start=1):
+            h = ws.cell(row=satir, column=i, value=deger)
+            h.font = TOPLAM_YAZI
+            h.fill = TOPLAM_DOLGU
+            h.border = CERCEVE
+            if i in (4, 5):
+                h.number_format = "0.000"
+            if i == 6:
+                h.number_format = "0.0"
+        satir += 1
+
+    bt, kt, dt = _topla(sonuc.satirlar)
+    for i, deger in enumerate(["TOPLAM", "", "", round(bt, 3), round(kt, 3), round(dt, 2)], start=1):
+        h = ws.cell(row=satir, column=i, value=deger)
+        h.font = Font(bold=True, size=12)
+        h.fill = GRUP_DOLGU
+        h.border = CERCEVE
+        if i in (4, 5):
+            h.number_format = "0.000"
+        if i == 6:
+            h.number_format = "0.0"
+
+
+def excel_yaz_toplu(sonuclar: list[MetrajSonucu], hedef: str | Path) -> Path:
+    """Cok katli/paftali calismanin ortak Excel dosyasini yazar.
+
+    Kat Ozeti ilk sayfada; metraj cetveli/eleman/uyari sayfalari kat bazli
+    kirilimlarla gelir. Bireysel katlar icin `--kat-adlari` (cok dosya) veya
+    `--paftalar` (cok PDF sayfasi) kullanilir.
+    """
+    from hakedis.metraj import sonuclari_birlestir
+
+    hedef = Path(hedef)
+    birlesik = sonuclari_birlestir(sonuclar)
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    _sayfa_kat_ozeti(wb, birlesik)
+    _sayfa_cetvel(wb, birlesik)
+    _sayfa_kirik_olcu(wb, birlesik)
+    _sayfa_elemanlar(wb, birlesik)
+    _sayfa_uyarilar(wb, birlesik)
 
     hedef.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(hedef))

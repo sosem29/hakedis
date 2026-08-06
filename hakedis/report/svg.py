@@ -211,6 +211,8 @@ def svg_yaz(sonuc: MetrajSonucu, hedef: str | Path) -> Path:
             f"beton {k['beton_m3']:.2f} m&#179; &#8226; "
             f"kalip {k['kalip_m2']:.2f} m&#178;"
         )
+        if k.get("demir_kg"):
+            metin += f" &#8226; demir ~{k['demir_kg']:.0f} kg"
         aciklama.append(
             f'<rect x="{KENAR_BOSLUGU}" y="{ay - 10}" width="14" height="14" '
             f'fill="{renk}" fill-opacity="0.6" stroke="#333" />'

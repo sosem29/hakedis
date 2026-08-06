@@ -390,10 +390,13 @@ def elemanlari_tespit_et(
         )
         e.segmentler = kenarlar(cevre, kapali=True)
         e.olculer["brut_alan"] = round(alan(cevre), 4)
-        e.olculer["t"] = float(ayarlar.al("kat.doseme_kalinligi", 0.15))
+        e.olculer["t"] = float(
+            ayarlar.al("merdiven.kalinlik", 0.14) or ayarlar.doseme_kalinligi
+        )
         e.not_ekle(
-            "Merdiven metraji plan izdusumunden hesaplandi; egim katsayisi "
-            "uygulanmadi. Kesit bilgisiyle elle kontrol edin."
+            "Merdiven metraji plan izdusumunden hesaplanir; egim katsayisi "
+            "yapilandirmadaki 'merdiven' bolumune gore uygulanir. Kesit "
+            "bilgisiyle elle kontrol edin."
         )
         e.guven = 0.5
         elemanlar.append(e)
