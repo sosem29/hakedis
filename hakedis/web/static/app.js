@@ -99,6 +99,7 @@ const ALANLAR = [
   { yol: "donati.aktif", etiket: "Yaklaşık demir (kg) hesabı", tip: "onay", panel: "hizli", bolum: "Donatı" },
   { yol: "maliyet.aktif", etiket: "Maliyet (YİGŞ tutar)", tip: "onay", panel: "hizli", bolum: "Maliyet" },
   { yol: "doseme.tip", etiket: "Döşeme tipi", tip: "select", secenekler: ["normal", "guseli", "mantar"], panel: "hizli", bolum: "Döşeme" },
+  { yol: "sta4cad.aktif", etiket: "Sta4CAD kalıp/temel planı profili", tip: "onay", panel: "hizli", bolum: "Sta4CAD" },
   { yol: "doseme.guseli_hacim_katsayisi", etiket: "Guseli hacim katsayısı", tip: "number", adim: 0.05, panel: "tam", bolum: "Döşeme" },
   { yol: "doseme.mantar_kolon_ustu_artisi", etiket: "Mantar kolon üstü artışı (m)", tip: "number", adim: 0.01, panel: "tam", bolum: "Döşeme" },
   { yol: "doseme.mantar_kolon_baslik_alani", etiket: "Mantar kolon başlık alanı (m²)", tip: "number", adim: 0.05, panel: "tam", bolum: "Döşeme" },
@@ -146,6 +147,8 @@ const DURUM = {
   aktifSekme: "metraj",
   sonSatirlar: null,
   sonKaynak: "",
+  sonPaket: null,
+  sonTip: "metraj",
 };
 
 /* ---------------- Form uretici ---------------- */
@@ -251,6 +254,116 @@ function sekmeAc(ad) {
   else if (ad === "metraj" || ad === "toplu") {
     hizliFormlariYenile();
     katAlanlariniYenile();
+  } else if (ad === "proje") {
+    projeListele();
+    projeKayitBilgisiniGuncelle();
+  }
+}
+
+/* ---------------- Projeler ---------------- */
+
+function projeKayitBilgisiniGuncelle() {
+  const bilgi = $("#proje-kayit-bilgi");
+  if (bilgi) {
+    bilgi.textContent = DURUM.sonPaket
+      ? `Geçerli sonuç: ${DURUM.sonTip === "toplu" ? "Toplu metraj" : DURUM.sonKaynak} — ad girip kaydedin.`
+      : "Henüz bir sonuç üretilmedi; önce Metraj veya Toplu Metraj çalıştırın.";
+  }
+}
+
+async function projeKaydet() {
+  const ad = $("#proje-ad").value.trim();
+  if (!ad) { bildirim("Lütfen bir proje adı girin.", "hata"); return; }
+  if (!DURUM.sonPaket) { bildirim("Kaydedilecek sonuç yok; önce metraj üretin.", "hata"); return; }
+  try {
+    await api("/api/projeler", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ad,
+        kaynak: DURUM.sonKaynak,
+        tip: DURUM.sonTip,
+        ayarlar: DURUM.yapilandirma,
+        veri: DURUM.sonPaket,
+      }),
+    });
+    bildirim(`"${ad}" kaydedildi.`);
+    projeListele();
+  } catch (e) {
+    bildirim("Proje kaydedilemedi: " + e.message, "hata");
+  }
+}
+
+async function projeListele() {
+  const alan = $("#proje-liste");
+  if (!alan) return;
+  alan.innerHTML = `<div class="bos-ikon">💾</div><p>Yükleniyor…</p>`;
+  try {
+    const { projeler } = await api("/api/projeler");
+    if (!projeler.length) {
+      alan.innerHTML = `
+        <div class="bos-ikon">💾</div>
+        <p>Henüz kayıtlı proje yok.</p>
+        <p class="bos-alt">Metraj sonucunu üretip "Projeye Kaydet" deyin.</p>`;
+      return;
+    }
+    alan.innerHTML = projeler.map((p) => `
+      <div class="proje-satiri">
+        <div class="proje-bilgi">
+          <strong>${esc(p.ad)}</strong>
+          <span class="badge badge-kat">${p.tip === "toplu" ? "Toplu" : "Metraj"}</span>
+          <span class="proje-kaynak">${esc(p.kaynak)}</span>
+          <span class="proje-tarih">${esc(p.tarih.replace("T", " ").slice(0, 16))}</span>
+        </div>
+        <div class="proje-aksiyon">
+          <button class="ikincil" data-proje-yukle="${esc(p.ad)}">Yükle</button>
+          <button class="ikincil tehlike" data-proje-sil="${esc(p.ad)}">Sil</button>
+        </div>
+      </div>`).join("");
+  } catch (e) {
+    alan.innerHTML = `<div class="bos-ikon">⚠️</div><p>Projeler listelenemedi: ${esc(e.message)}</p>`;
+  }
+}
+
+async function projeYukle(ad) {
+  try {
+    const p = await api(`/api/projeler/${encodeURIComponent(ad)}`);
+    if (p.ayarlar && typeof p.ayarlar === "object") {
+      DURUM.yapilandirma = p.ayarlar;
+      ayarFormlariniYenile();
+      hizliFormlariYenile();
+      katAlanlariniYenile();
+    }
+    if (p.tip === "toplu" && p.veri && p.veri.katlar) {
+      DURUM.sonPaket = p.veri;
+      DURUM.sonTip = "toplu";
+      DURUM.sonKaynak = p.kaynak || "toplu";
+      DURUM.sonSatirlar = p.veri.satirlar;
+      topluSonucuGoster(p.veri);
+      sekmeAc("toplu");
+      bildirim(`"${ad}" yüklendi (Toplu).`);
+    } else if (p.veri) {
+      DURUM.sonPaket = p.veri;
+      DURUM.sonTip = "metraj";
+      DURUM.sonKaynak = p.kaynak || "";
+      DURUM.sonSatirlar = p.veri.satirlar;
+      metrajSonucuGoster(p.veri, p.kaynak || ad);
+      sekmeAc("metraj");
+      bildirim(`"${ad}" yüklendi.`);
+    }
+  } catch (e) {
+    bildirim("Proje yüklenemedi: " + e.message, "hata");
+  }
+}
+
+async function projeSil(ad) {
+  if (!confirm(`"${ad}" projesini silmek istediğinize emin misiniz?`)) return;
+  try {
+    await api(`/api/projeler/${encodeURIComponent(ad)}`, { method: "DELETE" });
+    bildirim(`"${ad}" silindi.`);
+    projeListele();
+  } catch (e) {
+    bildirim("Proje silinemedi: " + e.message, "hata");
   }
 }
 
@@ -498,6 +611,7 @@ function metrajSonucuGoster(sonuc, ad, kapsayici) {
         <button class="ikincil" data-indir="excel">Excel</button>
         <button class="ikincil" data-indir="json">JSON</button>
         <button class="ikincil" data-indir="svg">SVG Pafta</button>
+        <button class="ikincil" data-proje-kaydet>💾 Projeye Kaydet</button>
       </div>
     </div>
     <div class="ozet-grid">${ozet}</div>
@@ -531,6 +645,8 @@ async function metrajCalistir() {
   const fd = new FormData();
   fd.append("dosya", dosya);
   fd.append("ayarlar", JSON.stringify(DURUM.yapilandirma));
+  const mahal = $("#metraj-mahal").files[0];
+  if (mahal) fd.append("mahal_dosya", mahal);
   const ek = {
     kat_adi: $("#metraj-kat-adi").value,
     olcek: $("#metraj-olcek").value,
@@ -549,6 +665,8 @@ async function metrajCalistir() {
     const veri = await api("/api/metraj", { method: "POST", body: fd });
     DURUM.sonSatirlar = veri.satirlar;
     DURUM.sonKaynak = dosya.name;
+    DURUM.sonPaket = veri;
+    DURUM.sonTip = "metraj";
     metrajSonucuGoster(veri, dosya.name);
     bildirim("Metraj hazır.");
   } catch (e) {
@@ -658,6 +776,7 @@ function topluSonucuGoster(veri) {
       <div class="indir-butonlar">
         <button class="ikincil" data-indir="excel">Excel</button>
         <button class="ikincil" data-indir="json">JSON</button>
+        <button class="ikincil" data-proje-kaydet>💾 Projeye Kaydet</button>
       </div>
     </div>
     ${katOzet}
@@ -692,6 +811,8 @@ async function topluCalistir() {
   fd.append("kat_adlari", JSON.stringify(katlar.map((k) => k.kat)));
   fd.append("kat_adetleri", JSON.stringify(katlar.map((k) => k.adet)));
   fd.append("ayarlar", JSON.stringify(DURUM.yapilandirma));
+  const mahal = $("#toplu-mahal").files[0];
+  if (mahal) fd.append("mahal_dosya", mahal);
   const ek = {
     olcek: $("#toplu-olcek").value,
     kalibre: $("#toplu-kalibre").value,
@@ -708,6 +829,8 @@ async function topluCalistir() {
     const veri = await api("/api/toplu", { method: "POST", body: fd });
     DURUM.sonSatirlar = veri.satirlar;
     DURUM.sonKaynak = `${katlar.length} kat`;
+    DURUM.sonPaket = veri;
+    DURUM.sonTip = "toplu";
     topluSonucuGoster(veri);
     bildirim("Toplu metraj hazır.");
   } catch (e) {
@@ -1170,6 +1293,8 @@ function olaylariBagla() {
   $$(".menu-ogesi").forEach((b) => b.addEventListener("click", () => sekmeAc(b.dataset.sekme)));
 
   birakAlaniYukle($("#metraj-birak"), $("#metraj-dosya"), () => { /* seçim bilgisi bırakma alanında */ });
+  birakAlaniYukle($("#metraj-mahal-birak"), $("#metraj-mahal"), () => { /* seçim bilgisi bırakma alanında */ });
+  birakAlaniYukle($("#toplu-mahal-birak"), $("#toplu-mahal"), () => { /* seçim bilgisi bırakma alanında */ });
   birakAlaniYukle($("#pdf-birak"), $("#pdf-dosya"), () => { /* seçim bilgisi bırakma alanında */ });
   birakAlaniYukle($("#esle-birak"), $("#esle-dosya"), () => { /* seçim bilgisi bırakma alanında */ });
 
@@ -1180,6 +1305,17 @@ function olaylariBagla() {
   $("#esle-tara").addEventListener("click", esleTara);
   $("#esle-uygula").addEventListener("click", esleUygula);
   $("#esle-yaml").addEventListener("click", esleYamlIndir);
+
+  // Projeler
+  $("#proje-kaydet-son").addEventListener("click", projeKaydet);
+  $("#proje-ad").addEventListener("keydown", (e) => { if (e.key === "Enter") projeKaydet(); });
+  document.addEventListener("click", (e) => {
+    const yukle = e.target.closest("[data-proje-yukle]");
+    if (yukle) { projeYukle(yukle.dataset.projeYukle); return; }
+    const sil = e.target.closest("[data-proje-sil]");
+    if (sil) { projeSil(sil.dataset.projeSil); return; }
+    if (e.target.closest("[data-proje-kaydet]")) projeKaydet();
+  });
 
   $("#ayar-varsayilan").addEventListener("click", ayarlariYenile);
   $("#ayar-indir").addEventListener("click", async () => {

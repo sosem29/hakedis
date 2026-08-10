@@ -128,3 +128,46 @@ def test_ayarlar_beton_sinifi(base_url, page):
     assert secim.input_value() == "C25/30"
     secim.select_option("C30/37")
     assert secim.input_value() == "C30/37"
+
+
+def test_proje_kaydet_yukle(base_url, page, plan):
+    import time
+
+    sayi = int(time.time() * 1000)
+    proje_adi = f"E2E {sayi}"
+
+    page.goto(base_url, wait_until="domcontentloaded")
+    page.wait_for_selector("#surum-alani", timeout=15000)
+
+    # Metraj uret
+    page.set_input_files("#metraj-dosya", str(plan))
+    page.fill("#metraj-kat-adi", "Kayit Kat")
+    page.click("#metraj-hesapla")
+    _metraj_sonuc_gorunene_kadar(page)
+    assert "Kayit Kat" in page.locator("#metraj-sonuc").inner_text()
+
+    # Projeler sekmesine git, kaydet
+    page.click('.menu-ogesi[data-sekme="proje"]')
+    page.wait_for_selector("#proje-liste", timeout=15000)
+    page.fill("#proje-ad", proje_adi)
+    page.click("#proje-kaydet-son")
+    page.wait_for_function(
+        f"document.querySelector('#proje-liste').innerText.includes({proje_adi!r})",
+        timeout=15000,
+    )
+
+    # Tekrar yukle: once metraj sonucunu bos bir sayfa gibi temizle
+    page.click('.menu-ogesi[data-sekme="proje"]')
+    page.locator(f'[data-proje-yukle="{proje_adi}"]').click()
+    page.wait_for_selector("#metraj-sonuc:not([hidden])", timeout=15000)
+    icerik = page.locator("#metraj-sonuc").inner_text()
+    assert "Kayit Kat" in icerik
+
+    # Temizlik: projeyi sil
+    page.click('.menu-ogesi[data-sekme="proje"]')
+    page.once("dialog", lambda d: d.accept())
+    page.locator(f'[data-proje-sil="{proje_adi}"]').click()
+    page.wait_for_function(
+        f"!document.querySelector('#proje-liste').innerText.includes({proje_adi!r})",
+        timeout=15000,
+    )

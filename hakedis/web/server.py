@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -33,6 +35,11 @@ app = FastAPI(title="hakedis", version=__version__)
 
 if STATIK_YOL.exists():
     app.mount("/static", StaticFiles(directory=STATIK_YOL), name="static")
+
+# Kayitli projeler (calisma kitabi): ~/.hakedis/projeler/<slug>.json
+PROJE_DIZINI = Path(
+    os.environ.get("HAKEDIS_PROJE_DIZINI", str(Path.home() / ".hakedis" / "projeler"))
+)
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +261,80 @@ async def yaml_uret(body: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Projeler (coklu proje / kayit)
+# ---------------------------------------------------------------------------
+
+
+def _proje_dosyasi(ad: str) -> Path:
+    slug = re.sub(r"[^a-zA-Z0-9._-]+", "_", ad.strip()).strip("._")
+    if not slug:
+        raise HTTPException(422, "Proje adi gecerli degil.")
+    return PROJE_DIZINI / f"{slug}.json"
+
+
+@app.get("/api/projeler")
+async def proje_listele() -> dict:
+    """Kayitli projeleri tarihe gore (yeni once) listeler."""
+    PROJE_DIZINI.mkdir(parents=True, exist_ok=True)
+    projeler = []
+    for p in PROJE_DIZINI.glob("*.json"):
+        try:
+            veri = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        projeler.append(
+            {
+                "ad": veri.get("ad", p.stem),
+                "kaynak": veri.get("kaynak", ""),
+                "tip": veri.get("tip", "metraj"),
+                "tarih": veri.get("tarih", ""),
+            }
+        )
+    projeler.sort(key=lambda k: k["tarih"], reverse=True)
+    return {"projeler": projeler}
+
+
+@app.post("/api/projeler")
+async def proje_kaydet(body: dict) -> dict:
+    ad = str(body.get("ad") or "").strip()
+    if not ad:
+        raise HTTPException(422, "Proje adi bos olamaz.")
+    kayit = {
+        "ad": ad,
+        "kaynak": str(body.get("kaynak") or ""),
+        "tip": str(body.get("tip") or "metraj"),
+        "ayarlar": body.get("ayarlar") or {},
+        "veri": body.get("veri") or {},
+        "tarih": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    hedef = _proje_dosyasi(ad)
+    hedef.parent.mkdir(parents=True, exist_ok=True)
+    hedef.write_text(
+        json.dumps(kayit, ensure_ascii=False), encoding="utf-8"
+    )
+    return {"ok": True, "ad": ad}
+
+
+@app.get("/api/projeler/{ad}")
+async def proje_yukle(ad: str) -> dict:
+    p = _proje_dosyasi(ad)
+    if not p.exists():
+        raise HTTPException(404, f"Proje bulunamadi: {ad}")
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Proje okunamadi: {e}")
+
+
+@app.delete("/api/projeler/{ad}")
+async def proje_sil(ad: str) -> dict:
+    p = _proje_dosyasi(ad)
+    if p.exists():
+        p.unlink()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # Metraj
 # ---------------------------------------------------------------------------
 
@@ -261,6 +342,7 @@ async def yaml_uret(body: dict) -> dict:
 @app.post("/api/metraj")
 async def metraj(
     dosya: UploadFile = File(...),
+    mahal_dosya: UploadFile | None = File(None),
     ayarlar: str | None = Form(None),
     yaml: str | None = Form(None),
     kat_adi: str | None = Form(None),
@@ -284,12 +366,17 @@ async def metraj(
     }
     ayarlar_nesnesi = _ezmeleri_uygula(_ayarlari_kur(ayarlar, yaml), ezmeler)
     yol = await _kaydet(dosya)
+    mahal_yolu = await _kaydet(mahal_dosya) if mahal_dosya else None
     try:
-        sonuc, _ = plandan_metraj(yol, ayarlar_nesnesi)
+        sonuc, _ = plandan_metraj(
+            yol, ayarlar_nesnesi, mahal_dosya=mahal_yolu
+        )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(422, f"Metraj uretilemedi: {e}")
     finally:
         Path(yol).unlink(missing_ok=True)
+        if mahal_yolu:
+            Path(mahal_yolu).unlink(missing_ok=True)
 
     from hakedis.maliyet import maliyet_hesapla
     from hakedis.report.veri import sonuc_verisi
@@ -310,6 +397,7 @@ async def metraj(
 @app.post("/api/toplu")
 async def toplu(
     dosyalar: list[UploadFile] = File(...),
+    mahal_dosya: UploadFile | None = File(None),
     kat_adlari: str | None = Form(None),
     kat_adetleri: str | None = Form(None),
     ayarlar: str | None = Form(None),
@@ -349,18 +437,23 @@ async def toplu(
 
     sonuclar = []
     gecici: list[str] = []
+    mahal_yolu = await _kaydet(mahal_dosya) if mahal_dosya else None
     try:
         for i, d in enumerate(dosyalar):
             yol = await _kaydet(d)
             gecici.append(yol)
             kat = adlar[i] if i < len(adlar) else Path(d.filename or "").stem
-            sonuc, _ = plandan_metraj(yol, ayarlar_nesnesi.guncelle(kat_adi=kat))
+            sonuc, _ = plandan_metraj(
+                yol, ayarlar_nesnesi.guncelle(kat_adi=kat), mahal_dosya=mahal_yolu
+            )
             sonuclar.append(sonuc)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(422, f"Toplu metraj uretilemedi: {e}")
     finally:
         for yol in gecici:
             Path(yol).unlink(missing_ok=True)
+        if mahal_yolu:
+            Path(mahal_yolu).unlink(missing_ok=True)
 
     if adetler:
         sonuclar = sonuclari_cogalt(sonuclar, adetler)

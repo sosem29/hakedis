@@ -196,6 +196,27 @@ html, body {
 .birak-metin { margin: 0; font-size: 13px; }
 .birak-metin strong { color: var(--vurgu-koyu); }
 .birak-alt { margin: 6px 0 0; font-size: 11px; color: var(--metin-soluk); }
+.birak-kucuk { padding: 14px 16px; }
+.birak-kucuk .birak-ikon { font-size: 18px; margin-bottom: 4px; }
+.birak-kucuk .birak-metin { font-size: 12px; }
+.opsiyonel {
+  font-size: 10px; font-weight: 600; color: var(--ok);
+  background: #f0faf4; border: 1px solid #cde9d8;
+  padding: 1px 6px; border-radius: 20px; vertical-align: middle;
+}
+
+/* ---------------- Projeler ---------------- */
+.proje-satiri {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; padding: 12px 14px; border: 1px solid #e2e8f0;
+  border-radius: var(--rad); margin-bottom: 10px; background: #fff;
+}
+.proje-bilgi { display: flex; flex-direction: column; gap: 3px; }
+.proje-kaynak { font-size: 12px; color: var(--metin-soluk); }
+.proje-tarih { font-size: 11px; color: var(--metin-soluk); }
+.proje-aksiyon { display: flex; gap: 6px; flex-shrink: 0; }
+button.tehlike { color: #b91c1c; border-color: #fecaca; }
+button.tehlike:hover { background: #fef2f2; }
 
 /* ---------------- Sonuç alanı ---------------- */
 .sonuc-alani { display: flex; flex-direction: column; gap: 16px; }

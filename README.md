@@ -43,6 +43,17 @@ Optional rules (enabled via config):
   quantities (approximate — flagged in the output).
 - **Floor covering (m²):** with `kaplama.aktif`, screed + ceramic lines are
   derived from the net slab area (approximate).
+- **Room (mahal) plans:** give an architectural plan alongside the formwork
+  plan (`--mahal`, or the optional "Mahal Planı" file in the web UI) and
+  covering/screed/plaster are measured **per room**: each closed room polygon
+  is the floor area, room perimeter × wall height is the inner wall plaster,
+  room area is the ceiling plaster, and the room label (ODA_ADI / MAHAL layer)
+  picks the covering type (ceramic/parquet/tile) via `mahal.kaplama_esleme`.
+- **Sta4CAD formwork/temel plans:** Sta4CAD exports its formwork and
+  foundation plans as AutoCAD DWG/DXF with its own layer names. Enable
+  `--sta4cad` (CLI) or the "Sta4CAD profili" checkbox (web) to merge Sta4CAD
+  layer patterns (Kolonlar, Kirişler, Tabliye, Sahanlık…) and count a "Temel"
+  layer as a slab. Patterns live under `sta4cad.katmanlar` and are additive.
 - **Concrete-class pricing:** pick the floor class via `kat.beton_sinifi`
   (`C25/30`, `C30/37`, `C35/45`); prices are read from `maliyet.beton_siniflari.<sınıf>`
   and stamped on concrete item descriptions.
@@ -115,6 +126,13 @@ hakedis toplu gir.dxf kat1.dxf kat2.dxf \
 hakedis toplu plan.pdf --adet 4
 hakedis toplu zemin.pdf 1kat.pdf --adet "4,2"
 hakedis toplu plan.pdf --paftalar "1:Giris,2:1.Kat,3:2.Kat" --config ofis.yml
+
+# 6. Per-room covering/plaster from a room (mahal) plan
+hakedis metraj kalip.dxf --mahal mahal_plani.dxf
+hakedis mahal mahal_plani.dxf -v      # list rooms and their quantities
+
+# 7. Sta4CAD formwork/temel plan (DWG/DXF with Sta4CAD layer names)
+hakedis metraj sta4cad_kalip.dwg --sta4cad
 ```
 
 ### Approximate cost from a previous run
@@ -127,11 +145,20 @@ hakedis maliyet sonuc.json --config ofis.yml       # apply unit prices
 Set `maliyet.aktif: true` in the config to embed the cost table in the take-off
 console output and the Excel workbook automatically.
 
-Prices come from two sources (the config wins on conflict):
+Prices come from three sources (later wins on conflict):
 
 1. an optional year-based unit-price database file, e.g. `birim_fiyatlar.yml`,
-   referenced with `maliyet.fiyatlar_yolu`;
-2. the `maliyet.poz_fiyatlari` table in your config.
+   referenced with `maliyet.fiyatlar_yolu` (including per-concrete-class prices
+   under a `beton_siniflari: <sınıf>: {poz: fiyat}` section);
+2. the `maliyet.poz_fiyatlari` table in your config;
+3. the selected concrete class `maliyet.beton_siniflari.<kat.beton_sinifi>`
+   (default `C25/30`, with `C30/37` and `C35/45` samples shipped).
+
+The shipped example database already covers every poz the system emits — RC
+concrete/formwork, rebar, plaster, partition walls (`21.121`), doors/windows,
+ceramic/screed, and parquet (`23.063`) — plus the three concrete classes. It is
+still illustrative: replace with current ministry / provincial unit prices
+before relying on an estimate.
 
 The console and Excel cost output follow the tender (YİGŞ) layout with running
 numbers, trade sections (`BETONARME`, `SIVA-BADANA`, `DOGRAMA`,
@@ -169,6 +196,10 @@ Tabs:
 - **Maliyet (Cost):** edit poz unit prices, KDV, currency, and the optional
   unit-price database file; compute an estimate from the last take-off, and
   toggle whether the cost is embedded in take-off results and Excel.
+- **Projeler (Projects):** save any take-off or bulk result as a named project
+  (result + settings) and reload or delete it later. Projects are stored
+  locally in `~/.hakedis/projeler/`, so you can keep several jobs open and
+  switch between them. "Projeye Kaydet" is also available on every result.
 - **Ayarlar (Settings):** quick form or advanced YAML editor — same
   configuration as `config-yaz`, managed from the UI.
 
@@ -340,10 +371,10 @@ Honestly stated so you can trust the output:
 - **Ribbed (guse) and flat (mantar) slabs** use coefficient-based approximate
   rules; the actual rib/guse geometry is not read and manual review is required.
 - **Curved elements** have no special handling and come out approximate.
-- **Doors, windows, plaster and covering quantities are read from the plan
-  (labels / formwork surfaces).** They are approximate and flagged as such:
-  floor levels, room finishes (ceramic vs. parquet) and actual opening frames
-  come from the architectural (mahal) plans, which are not read.
+- **Doors, windows, plaster and covering quantities are approximate.** If you
+  supply a room (mahal) plan, covering/screed/plaster are measured per room;
+  without one they are derived from formwork surfaces and flagged as such.
+  Opening frames still need physical checking.
 - One sheet is processed per run. For multi-storey work use the `toplu` command
   (multiple files or a multi-page PDF), naming each floor with
   `--kat-adlari` / `--paftalar` and producing a shared Excel and JSON output.
@@ -371,6 +402,12 @@ the `e2e` marker only selects them when the server + browsers are available.
 
 Expected values in the end-to-end tests are hand-computed so that the take-off
 formulas cannot silently change.
+
+### Continuous integration
+
+A [GitHub Actions workflow](.github/workflows/ci.yml) runs the unit + API tests
+on Python 3.10/3.11/3.12 and the Playwright browser tests (headless Chromium)
+on every push and pull request.
 
 ## License
 

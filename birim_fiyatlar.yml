@@ -28,6 +28,9 @@
 "21.061": 250           # Ic siva (m2)
 "21.071": 210           # Tavan siva + badana (m2)
 
+# --- Bolme duvar ---------------------------------------------------------------
+"21.121": 850           # Bolme duvar (yigma/tugla, m2) - duvar metrajindan
+
 # --- Dograma ------------------------------------------------------------------
 "22.201": 3000          # Ic kapi (adet)
 "22.211": 2200          # Pencere dogramasi (adet)
@@ -35,3 +38,27 @@
 # --- Doseme kaplama ------------------------------------------------------------
 "23.062/S": 320         # Seramik doseme kaplama (m2)
 "23.062/T": 90          # Tesviye / suphe tabakasi (m2)
+"23.063": 260           # Parke / laminat doseme kaplama (m2) - mahal planindan
+
+# --- Beton sinifi ezmeleri ------------------------------------------------------
+# Secili sinif `kat.beton_sinifi` ile gelir; bu fiyatlar ustteki betonarme
+# pozlarinin ustune biner (sadece "16." on ekli beton pozlarina uygulanir).
+beton_siniflari:
+  C25/30:
+    "16.058/1-K": 4200
+    "16.058/1-P": 4200
+    "16.058/1-Kr": 4300
+    "16.058/1-D": 4300
+    "16.058/1-M": 4600
+  C30/37:
+    "16.058/1-K": 4500
+    "16.058/1-P": 4500
+    "16.058/1-Kr": 4600
+    "16.058/1-D": 4600
+    "16.058/1-M": 4900
+  C35/45:
+    "16.058/1-K": 4800
+    "16.058/1-P": 4800
+    "16.058/1-Kr": 4900
+    "16.058/1-D": 4900
+    "16.058/1-M": 5200

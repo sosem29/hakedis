@@ -46,6 +46,7 @@ def fiyat_sozlugu(ayarlar: Ayarlar) -> dict[str, float]:
       3. secili beton sinifi ezmeleri `maliyet.beton_siniflari.<sinif>`
     """
     birlestik: dict[str, float] = {}
+    sinif = str(ayarlar.al("kat.beton_sinifi", "C25/30") or "C25/30")
     yol = str(ayarlar.al("maliyet.fiyatlar_yolu", "") or "").strip()
     if yol:
         import yaml
@@ -56,6 +57,13 @@ def fiyat_sozlugu(ayarlar: Ayarlar) -> dict[str, float]:
                 with open(p, "r", encoding="utf-8") as f:
                     tablo = yaml.safe_load(f) or {}
                 for k, v in tablo.items():
+                    if k == "beton_siniflari" and isinstance(v, dict):
+                        for bpoz, fiyat in (v.get(sinif) or {}).items():
+                            try:
+                                birlestik[str(bpoz)] = float(fiyat)
+                            except (TypeError, ValueError):  # pragma: no cover
+                                continue
+                        continue
                     try:
                         birlestik[str(k)] = float(v)
                     except (TypeError, ValueError):  # pragma: no cover
@@ -67,7 +75,6 @@ def fiyat_sozlugu(ayarlar: Ayarlar) -> dict[str, float]:
             birlestik[str(k)] = float(v)
         except (TypeError, ValueError):  # pragma: no cover
             continue
-    sinif = str(ayarlar.al("kat.beton_sinifi", "C25/30") or "C25/30")
     for k, v in (ayarlar.al(f"maliyet.beton_siniflari.{sinif}", {}) or {}).items():
         try:
             birlestik[str(k)] = float(v)

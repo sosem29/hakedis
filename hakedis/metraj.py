@@ -882,9 +882,16 @@ def _siva_kaplama_satirlari(
 
 
 def metraj_hesapla(
-    elemanlar: list[Eleman], ayarlar: Ayarlar, uyarilar: list[str] | None = None
+    elemanlar: list[Eleman],
+    ayarlar: Ayarlar,
+    uyarilar: list[str] | None = None,
+    mahaller: list | None = None,
 ) -> MetrajSonucu:
-    """Tespit edilmis elemanlardan kirik olcu metraj cetvelini uretir."""
+    """Tespit edilmis elemanlardan kirik olcu metraj cetvelini uretir.
+
+    `mahaller` verilirse (mahal planindan okunan odalar) kaplama/tesviye/
+    siva satirlari formkorku yaklasikligi yerine oda bazinda uretilir.
+    """
     kat = ayarlar.kat_adi
     for e in elemanlar:
         if not e.kat:
@@ -926,17 +933,29 @@ def metraj_hesapla(
             satirlar.extend(_duvar_satirlari(e, ayarlar, acikliklar))
 
     satirlar.extend(_dogrular_satirlari(elemanlar, ayarlar))
-    ek = _siva_kaplama_satirlari(satirlar, ayarlar)
-    if ek:
-        satirlar.extend(ek)
-        sonuc_uyarilari = list(uyarilar or [])
-        sonuc_uyarilari.append(
-            "Siva/kaplama metraji kalip planindan YAKLASIK uretildi; kot "
-            "farklari ve kaplama cinsleri (seramik/parke) mahal planindan "
-            "okunamadigi icin kesin bedele esas degerler icin mahal "
-            "planlarini kullanin."
-        )
-        uyarilar = sonuc_uyarilari
+    sonuc_uyarilari = list(uyarilar or [])
+    if mahaller:
+        from hakedis.mahal import mahal_satirlari
+
+        ek = mahal_satirlari(mahaller, ayarlar)
+        if ek:
+            satirlar.extend(ek)
+            sonuc_uyarilari.append(
+                "Kaplama/tesviye/siva metraji MAHAL PLANINDAN uretildi; kot "
+                "farklari ve kapi/pencere bosluk dusumu icin fiziksel kontrol "
+                "gerekir."
+            )
+    else:
+        ek = _siva_kaplama_satirlari(satirlar, ayarlar)
+        if ek:
+            satirlar.extend(ek)
+            sonuc_uyarilari.append(
+                "Siva/kaplama metraji kalip planindan YAKLASIK uretildi; kot "
+                "farklari ve kaplama cinsleri (seramik/parke) mahal planindan "
+                "okunamadigi icin kesin bedele esas degerler icin mahal "
+                "planlarini kullanin."
+            )
+    uyarilar = sonuc_uyarilari
 
     sonuc = MetrajSonucu(
         kat=kat,
@@ -974,7 +993,7 @@ def metraj_hesapla(
 
 
 def plandan_metraj(
-    dosya: str, ayarlar: Ayarlar
+    dosya: str, ayarlar: Ayarlar, mahal_dosya: str | None = None
 ) -> tuple[MetrajSonucu, Cizim]:
     """Uctan uca: dosyayi oku, elemanlari tespit et, metraji hesapla."""
     from hakedis.detect import elemanlari_tespit_et
@@ -982,8 +1001,21 @@ def plandan_metraj(
 
     cizim = cizim_oku(dosya, ayarlar)
     elemanlar, uyarilar = elemanlari_tespit_et(cizim, ayarlar)
-    sonuc = metraj_hesapla(elemanlar, ayarlar, uyarilar)
+
+    mahaller = None
+    if mahal_dosya:
+        from hakedis.mahal import mahalleri_oku
+
+        mahaller, mahal_uyarilari = mahalleri_oku(mahal_dosya, ayarlar)
+        uyarilar = list(uyarilar) + list(mahal_uyarilari)
+
+    sonuc = metraj_hesapla(elemanlar, ayarlar, uyarilar, mahaller)
     sonuc.kaynak_dosya = str(dosya)
+    if mahaller is not None:
+        sonuc.parametreler["mahal"] = {
+            "adet": len(mahaller),
+            "toplam_alan": round(sum(m.alan for m in mahaller), 3),
+        }
     return sonuc, cizim
 
 

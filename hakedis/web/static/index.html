@@ -30,6 +30,9 @@
       <button class="menu-ogesi" data-sekme="maliyet">
         <span class="ikon">💰</span> Maliyet
       </button>
+      <button class="menu-ogesi" data-sekme="proje">
+        <span class="ikon">💾</span> Projeler
+      </button>
       <button class="menu-ogesi" data-sekme="pdf">
         <span class="ikon">🔍</span> PDF İncele
       </button>
@@ -58,6 +61,13 @@
             <div class="birak-ikon">⬆</div>
             <p class="birak-metin"><strong>Dosyayı sürükleyip bırakın</strong> veya tıklayıp seçin</p>
             <p class="birak-alt">Desteklenen: .dwg, .dxf, .pdf</p>
+          </div>
+
+          <div class="panel-baslik">Mahal (Oda) Planı <span class="opsiyonel">opsiyonel</span></div>
+          <div id="metraj-mahal-birak" class="birak-alani birak-kucuk">
+            <input type="file" id="metraj-mahal" accept=".dwg,.dxf,.pdf" hidden>
+            <div class="birak-ikon birak-ikon-kucuk">⬆</div>
+            <p class="birak-metin">Oda bazlı kaplama/tesviye/sıva için mahal planı seçin</p>
           </div>
 
           <div class="panel-baslik">Kat</div>
@@ -178,6 +188,12 @@
             </label>
           </div>
           <div id="toplu-hizli-form" class="hizli-form"></div>
+          <div class="panel-baslik">Mahal (Oda) Planı <span class="opsiyonel">opsiyonel</span></div>
+          <div id="toplu-mahal-birak" class="birak-alani birak-kucuk">
+            <input type="file" id="toplu-mahal" accept=".dwg,.dxf,.pdf" hidden>
+            <div class="birak-ikon birak-ikon-kucuk">⬆</div>
+            <p class="birak-metin">Tüm katlar için ortak mahal planı (oda bazlı kaplama/sıva)</p>
+          </div>
           <div class="panel-baslik">PDF (çok sayfalı tek dosya)</div>
           <div class="form-satir">
             <label class="alan">Ölçek
@@ -289,6 +305,32 @@
           <div class="ayar-yaml-butonlar">
             <button id="ayar-yaml-formdan" class="ikincil">Formdan YAML Üret</button>
             <button id="ayar-yaml-forma" class="ikincil">YAML'ı Forma Uygula</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================== PROJELER ============================ -->
+    <section id="sekme-proje" class="sekme">
+      <header class="sayfa-baslik">
+        <h1>Projeler</h1>
+        <p>Kaydettiğiniz metraj/toplu sonuçlarını listeleyin, yükleyin veya silin. Projeler bu bilgisayarda <code>~/.hakedis/projeler/</code> altında saklanır.</p>
+      </header>
+      <div class="cift-sutun">
+        <div class="panel giris">
+          <div class="panel-baslik">Yeni Kayıt</div>
+          <div class="form-satir">
+            <label class="alan alan-tam">Proje adı
+              <input type="text" id="proje-ad" placeholder="Örn: Güç Merkezi Binası">
+            </label>
+          </div>
+          <button id="proje-kaydet-son" class="birincil">Geçerli Sonucu Kaydet</button>
+          <p id="proje-kayit-bilgi" class="bos-alt" style="margin-top:10px">Henüz bir sonuç üretilmedi; önce Metraj veya Toplu Metraj çalıştırın.</p>
+        </div>
+        <div class="panel sonuc">
+          <div id="proje-liste" class="bos-alani">
+            <div class="bos-ikon">💾</div>
+            <p>Yükleniyor…</p>
           </div>
         </div>
       </div>

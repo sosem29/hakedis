@@ -29,6 +29,13 @@ def pdf(tmp_path_factory) -> Path:
 
 
 @pytest.fixture(scope="module")
+def mahal_plani(tmp_path_factory) -> Path:
+    from tests.test_mahal import _mahal_plani
+
+    return _mahal_plani(tmp_path_factory.mktemp("web") / "mahal.dxf")
+
+
+@pytest.fixture(scope="module")
 def client():
     return TestClient(app)
 
@@ -124,6 +131,24 @@ class TestMetraj:
         # donati.aktif varsayilanlarla birlestirildi, demir satiri uretildi
         assert veri["ozet"]["Kolon"]["demir_kg"] > 0
 
+    def test_metraj_mahal_dosyasi(self, client, plan, mahal_plani):
+        r = client.post(
+            "/api/metraj",
+            files={
+                "dosya": ("kalip_plani.dxf", plan.read_bytes(), "application/dxf"),
+                "mahal_dosya": ("mahal.dxf", mahal_plani.read_bytes(), "application/dxf"),
+            },
+            data={"ayarlar": json.dumps({"siva": {"aktif": True}})},
+        )
+        assert r.status_code == 200, r.text
+        veri = r.json()
+        assert veri["parametreler"]["mahal"]["adet"] == 2
+        satirlar = veri["satirlar"]
+        kap = sum(s["alan"] for s in satirlar if s["eleman"] == "KAPLAMA")
+        assert kap == pytest.approx(37.0, abs=1e-3)
+        siva = next(s for s in satirlar if s["eleman"] == "SIVA")
+        assert siva["alan"] == pytest.approx(102.0, abs=1e-3)
+
 
 class TestToplu:
     def test_toplu_api(self, client, plan):
@@ -145,6 +170,69 @@ class TestToplu:
         assert veri["toplam"]["Doseme"]["beton_m3"] == pytest.approx(2 * tek, abs=1e-3)
         assert veri["excel_b64"]
         assert base64.b64decode(veri["excel_b64"])[:2] == b"PK"
+
+
+class TestProjeler:
+    def test_proje_kaydet_listele_yukle_sil(self, client, monkeypatch, tmp_path):
+        import hakedis.web.server as server
+
+        # Projeleri test dizinine yaz
+        monkeypatch.setattr(server, "PROJE_DIZINI", tmp_path / "projeler")
+
+        # kaydet
+        r = client.post(
+            "/api/projeler",
+            json={
+                "ad": "Test Projesi",
+                "kaynak": "plan.dxf",
+                "tip": "metraj",
+                "ayarlar": {"donati": {"aktif": True}},
+                "veri": {"kat": "1. Kat", "satirlar": [{"poz": "16.058/1-K"}]},
+            },
+        )
+        assert r.status_code == 200, r.text
+
+        # listele
+        r = client.get("/api/projeler")
+        assert r.status_code == 200
+        projeler = r.json()["projeler"]
+        assert len(projeler) == 1
+        assert projeler[0]["ad"] == "Test Projesi"
+        assert projeler[0]["kaynak"] == "plan.dxf"
+
+        # yukle
+        r = client.get("/api/projeler/Test_Projesi")
+        assert r.status_code == 200, r.text
+        p = r.json()
+        assert p["ad"] == "Test Projesi"
+        assert p["ayarlar"]["donati"]["aktif"] is True
+        assert p["veri"]["satirlar"][0]["poz"] == "16.058/1-K"
+
+        # varolmayan proje yuklenemez
+        r = client.get("/api/projeler/bulunmaz")
+        assert r.status_code == 404
+
+        # sil
+        r = client.delete("/api/projeler/Test_Projesi")
+        assert r.status_code == 200
+        assert client.get("/api/projeler").json()["projeler"] == []
+
+    def test_proje_gecersiz_ad(self, client, monkeypatch, tmp_path):
+        import hakedis.web.server as server
+
+        monkeypatch.setattr(server, "PROJE_DIZINI", tmp_path / "projeler")
+        r = client.post("/api/projeler", json={"ad": "   ", "veri": {}})
+        assert r.status_code == 422
+
+    def test_proje_ayni_adi_ustune_yazar(self, client, monkeypatch, tmp_path):
+        import hakedis.web.server as server
+
+        monkeypatch.setattr(server, "PROJE_DIZINI", tmp_path / "projeler")
+        client.post("/api/projeler", json={"ad": "A", "kaynak": "x.dxf", "veri": {"a": 1}})
+        client.post("/api/projeler", json={"ad": "A", "kaynak": "y.dxf", "veri": {"a": 2}})
+        projeler = client.get("/api/projeler").json()["projeler"]
+        assert len(projeler) == 1
+        assert projeler[0]["kaynak"] == "y.dxf"
 
 
 class TestPdf:

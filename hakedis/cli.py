@@ -57,6 +57,8 @@ def _ayarlari_hazirla(args) -> object:
         olcek=getattr(args, "olcek", None),
         sayfa=getattr(args, "sayfa", None),
     )
+    if getattr(args, "sta4cad", False):
+        ayarlar.ham.setdefault("sta4cad", {})["aktif"] = True
     kalibre = getattr(args, "kalibre", None)
     if kalibre:
         try:
@@ -82,7 +84,8 @@ def komut_metraj(args) -> int:
     from hakedis.report import excel_yaz, konsol_ozeti, svg_yaz
 
     ayarlar = _ayarlari_hazirla(args)
-    sonuc, _ = plandan_metraj(args.dosya, ayarlar)
+    mahal_dosya = getattr(args, "mahal", None)
+    sonuc, _ = plandan_metraj(args.dosya, ayarlar, mahal_dosya=mahal_dosya)
 
     print(konsol_ozeti(sonuc, ayrintili=args.ayrintili))
 
@@ -205,6 +208,34 @@ def komut_katmanlar(args) -> int:
             f"  3. hakedis metraj {args.dosya} --config ofis.yml"
         )
     return 0
+
+
+def komut_mahal(args) -> int:
+    """Mahal planindan odalari oku ve ozet tablosunu yaz."""
+    from hakedis.mahal import mahal_satirlari, mahalleri_oku
+
+    ayarlar = _ayarlari_hazirla(args)
+    mahaller, uyarilar = mahalleri_oku(args.dosya, ayarlar)
+
+    print(f"{len(mahaller)} oda/mahal bulundu.\n")
+    print(f"{'Mahal':<24} {'Tur':<10} {'Alan (m2)':>10} {'Cevre (m)':>10}")
+    print("-" * 58)
+    for m in mahaller:
+        print(
+            f"{(m.ad or '?'):<24} {m.tip:<10} {m.alan:>10.3f} {m.cevre:>10.3f}"
+        )
+    if uyarilar:
+        print("\nUyarilar:")
+        for u in uyarilar:
+            print(f"  - {u}")
+
+    if getattr(args, "ayrintili", False):
+        print("\nUretilecek satirlar:")
+        for s in mahal_satirlari(mahaller, ayarlar):
+            print(
+                f"  {s.poz:<10} {s.eleman_adi:<28} {s.tanim:<50} {s.alan:.3f} m2"
+            )
+    return 1 if uyarilar and getattr(args, "kati", False) else 0
 
 
 def komut_pdf_incele(args) -> int:
@@ -390,11 +421,12 @@ def komut_toplu(args) -> int:
 
     temel = _ayarlari_hazirla(args)
     isler = _toplu_isleri_hazirla(args, temel)
+    mahal_dosya = getattr(args, "mahal", None)
 
     sonuclar: list = []
     for kat, dosya, ayarlar in isler:
         print(f"[toplu] {kat}: {dosya} ...", file=sys.stderr)
-        sonuc, _ = plandan_metraj(dosya, ayarlar)
+        sonuc, _ = plandan_metraj(dosya, ayarlar, mahal_dosya=mahal_dosya)
         sonuclar.append(sonuc)
 
     adetler = _adet_listesi(args)
@@ -532,6 +564,17 @@ Cok katli / cok paftali:
         help="Uyari varsa cikis kodu 1 dondur (otomasyon icin)",
     )
     m.set_defaults(func=komut_metraj)
+    m.add_argument(
+        "--mahal",
+        help="Mahal plani dosyasi (.dwg/.dxf/.pdf); verilirse kaplama/tesviye/"
+        "siva metraji oda bazinda uretilir",
+    )
+    m.add_argument(
+        "--sta4cad",
+        action="store_true",
+        help="Sta4CAD kalip/temel plani profili: ek katman eslemeleri ve "
+        "'Temel' katmanini doseme say",
+    )
 
     t = alt.add_parser(
         "toplu",
@@ -587,6 +630,16 @@ Cok katli / cok paftali:
     )
     t.add_argument("--cikti", "-o", help="Excel cikti yolu (.xlsx)")
     t.add_argument("--json", help="Sonucu JSON olarak da yaz")
+    t.add_argument(
+        "--mahal",
+        help="Tek bir mahal plani dosyasi (.dwg/.dxf/.pdf); verilirse tum "
+        "kayitlara uygulanir",
+    )
+    t.add_argument(
+        "--sta4cad",
+        action="store_true",
+        help="Sta4CAD kalip/temel plani profili (ek katman eslemeleri)",
+    )
     t.set_defaults(func=komut_toplu)
 
     k = alt.add_parser("katmanlar", help="Cizimdeki katmanlari ve eslemeleri listele")
@@ -605,6 +658,14 @@ Cok katli / cok paftali:
     pi.add_argument("dosya", help="PDF dosyasi")
     pi.add_argument("--sayfa", type=int, default=1, help="Sayfa numarasi")
     pi.set_defaults(func=komut_pdf_incele)
+
+    mh = alt.add_parser("mahal", help="Mahal planindan odalari oku")
+    _ortak_argumanlar(mh)
+    mh.add_argument("--ayrintili", "-v", action="store_true",
+                    help="Odalardan uretilecek metraj satirlarini da yaz")
+    mh.add_argument("--kati", dest="katı", action="store_true",
+                    help="Uyari varsa cikis kodu 1 dondur (otomasyon icin)")
+    mh.set_defaults(func=komut_mahal)
 
     c = alt.add_parser("config-yaz", help="Duzenlenebilir yapilandirma dosyasi olustur")
     c.add_argument("--cikti", "-o", default="hakedis.yml", help="Hedef YAML yolu")

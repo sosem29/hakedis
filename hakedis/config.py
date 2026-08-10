@@ -96,7 +96,9 @@ class Ayarlar:
 
     # -- katman esleme -------------------------------------------------------
     def katman_desenleri(self, tip: str) -> list[re.Pattern[str]]:
-        desenler = self.al(f"katmanlar.{tip}", []) or []
+        desenler = list(self.al(f"katmanlar.{tip}", []) or [])
+        if self.al("sta4cad.aktif", False):
+            desenler += list(self.al(f"sta4cad.katmanlar.{tip}", []) or [])
         return [re.compile(d, re.IGNORECASE) for d in desenler]
 
     def katman_tipi(self, katman: str) -> str | None:
@@ -128,10 +130,13 @@ class Ayarlar:
             "kapi",
             "pencere",
             "metin",
+            "temel",
         ):
             for desen in self.katman_desenleri(tip):
                 if desen.search(ad):
-                    return tip
+                    if tip == "temel" and not self.al("sta4cad.temel_doseme", True):
+                        return None
+                    return "doseme" if tip == "temel" else tip
         return None
 
     def guncelle(self, **kwargs: Any) -> "Ayarlar":

@@ -99,6 +99,19 @@ katmanlar:
     - 'ISIM'
     - 'İSİM'
     - '^S-?TEXT'
+  # Mahal (oda) plani katmanlari: oda sinirlari ve oda adi etiketleri.
+  # Mahal plani ayri bir dosyaysa tespit bu katmanlari arar; PDF'te katman
+  # olmadigi icin tum kapali poligonlar oda adayi kabul edilir.
+  mahal:
+    - '^MAHAL'
+    - '^ODA'
+    - '^ROOM'
+    - '^MEKAN'
+    - '^BOLUM'
+  mahal_etiket:
+    - 'ODA_ADI'
+    - 'MAHAL_ADI'
+    - '^ROOM[-_]?NAME'
   # Metraja hic girmeyecek katmanlar (aks, olculendirme, tarama vs.)
   yoksay:
     - '^AKS'
@@ -121,6 +134,45 @@ katmanlar:
   # kesin:
   #   "S-KOLON-202": kolon
   #   "AKS-1": yoksay
+
+# --- Sta4CAD profili ---------------------------------------------------------
+# Sta4CAD'den AutoCAD (kalip/temel plani) olarak disa aktarilan DXF/DWG
+# dosyalari icin hazir katman eslemesi. Aktifken `sta4cad.katmanlar` desenleri
+# varsayilan katman eslemeleriyle birlestirilir ve "Temel" katmani doseme
+# (plak) olarak sayilir. CLI: `--sta4cad`, web: "Hizli Secenekler" kutusu.
+sta4cad:
+  aktif: false
+  # Temel planindaki "Temel" katmani doseme (plak) olarak metraja girsin.
+  # Kapatirsaniz temel katmani yok sayilir (metraja girmez).
+  temel_doseme: true
+  # Sta4CAD kalip/temel planlarinda sik kullanilan ek katman ad desenleri.
+  # Bunlar `katmanlar.*` desenlerinin uzerine eklenir, yerine gecmez.
+  katmanlar:
+    kolon:
+      - '^KOLONLAR'
+      - '^KOLON[-_ ]?APLIKASYON'
+    perde:
+      - '^PERDELER'
+      - '^PERDE[-_ ]?APLIKASYON'
+    kiris:
+      - '^KIRIŞLER'
+      - '^KİRİŞLER'
+      - '^KIRISLER'
+    doseme:
+      - '^PLAK[-_ ]?KALIP'
+      - '^TABLİYE'
+      - '^TABLIYE'
+    bosluk:
+      - '^BOSLUKLAR'
+      - '^BOŞLUKLAR'
+    merdiven:
+      - '^SAHANLIK'
+      - '^BASAMAK'
+    temel:
+      - '^TEMEL'
+      - '^SUBSTR'
+    yoksay:
+      - '^DONATI[-_ ]?CALISMA'
 
 # --- Geometrik sezgiseller ---------------------------------------------------
 # Katman adlari guvenilmezse (ozellikle PDF'te) eleman tipini bicimden tahmin et
@@ -206,6 +258,40 @@ kaplama:
   # Tesviye + seramik/parke icin ayri pozlar uretilir.
   tesviye_poz: "23.062/T"
   seramik_poz: "23.062/S"
+  parke_poz: "23.063"
+
+# --- Mahal (oda) plani -------------------------------------------------------
+# Kalip plani yaninda bir mahal plani (.dwg/.dxf/.pdf) verildiginde kaplama,
+# tesviye ve siva metrajlari formkorku yaklasikligi yerine oda bazinda
+# kesinlestirilir: her odanin poligon alani = zemin kaplama alani, cevresi x
+# duvar yuksekligi = ic duvar sivasi. Oda adi (etiketi) kaplama cinsini secer.
+mahal:
+  aktif: true
+  # Oda sinir poligonu sayilmasi icin gereken en kucuk alan (m2)
+  min_alan: 1.0
+  # Ic duvar sivasi icin oda cevresinin yuksekligi (m); 0 = kat yuksekligi
+  duvar_yuksekligi: 0
+  # Oda adi icerigi -> kaplama turu. "varsayilan" eslesmeyen adlar icindir.
+  # Turler: seramik | parke | laminat | karo | beton | terrazzo
+  kaplama_esleme:
+    mutfak: seramik
+    banyo: seramik
+    'wc': seramik
+    'du$': seramik
+    dus: seramik
+    hizmet: seramik
+    teras: karo
+    balkon: karo
+    hol: parke
+    salon: parke
+    oda: parke
+    yatak: parke
+    koridor: parke
+    merdiven: beton
+    varsayilan: parke
+  # Odalarin kendi icinde "alan (m2)" yazisi okunur; false ise alan
+  # poligon geometrisinden hesaplanir (daha guvenilir).
+  alan_etiketi_oku: false
 
 # --- Bolme duvari (mimari plandan) ------------------------------------------
 # Yapici olmayan bolme duvarlari (tugla/bims) katman cizgilerinden (cift
@@ -324,9 +410,24 @@ maliyet:
   #       "16.058/1-K": 4500
   #       "16.058/1-D": 4600
   beton_siniflari:
-    C25/30: {}
-    C30/37: {}
-    C35/45: {}
+    C25/30:
+      "16.058/1-K": 4200
+      "16.058/1-P": 4200
+      "16.058/1-Kr": 4300
+      "16.058/1-D": 4300
+      "16.058/1-M": 4600
+    C30/37:
+      "16.058/1-K": 4500
+      "16.058/1-P": 4500
+      "16.058/1-Kr": 4600
+      "16.058/1-D": 4600
+      "16.058/1-M": 4900
+    C35/45:
+      "16.058/1-K": 4800
+      "16.058/1-P": 4800
+      "16.058/1-Kr": 4900
+      "16.058/1-D": 4900
+      "16.058/1-M": 5200
   # Poz -> birim fiyat (TL). Poz numaralari ustteki pozlar ile eslesir.
   poz_fiyatlari:
     "16.058/1-K": 4200
@@ -344,8 +445,10 @@ maliyet:
     "22.211": 2200
     "21.061": 250
     "21.071": 210
+    "21.121": 850
     "23.062/S": 320
     "23.062/T": 90
+    "23.063": 260
 
 # --- PDF'e ozel ayarlar ------------------------------------------------------
 pdf:
