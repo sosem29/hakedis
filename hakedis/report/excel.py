@@ -14,11 +14,13 @@ kontrol muhendisi her satiri elle dogrulayabilir.
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.properties import PageSetupProperties
 
 from hakedis.model import ElemanTipi, MetrajSonucu
 
@@ -123,6 +125,16 @@ def _sayfa_ozet(wb: Workbook, sonuc: MetrajSonucu) -> None:
         h.font = TOPLAM_YAZI
         h.fill = TOPLAM_DOLGU
         h.border = CERCEVE
+
+    for r in range(6, satir):
+        ws.cell(row=r, column=2).number_format = "0"
+        ws.cell(row=r, column=3).number_format = "0.000"
+        ws.cell(row=r, column=4).number_format = "0.000"
+        ws.cell(row=r, column=5).number_format = "0.0"
+
+    satir += 1
+    ws.cell(row=satir, column=1, value="Uretim tarihi").font = TOPLAM_YAZI
+    ws.cell(row=satir, column=2, value=date.today().isoformat())
 
     satir += 3
     ws.cell(
@@ -507,6 +519,39 @@ def _sayfa_maliyet(
     )
 
 
+def _rapor_bitir(wb: Workbook) -> None:
+    """Tum sayfalara yazdirma (PDF) ve filtre ayarlari uygular.
+
+    A4 kagit, genis cetvel sayfalari yatay, sira basligi her sayfada
+    tekrarlanir ve alt bilgide dosya adi + sayfa numarasi cikar.
+    Veri sayfalarina otomatik filtre eklenir.
+    """
+    yatay = {
+        "Metraj Cetveli", "Kirik Olcu", "Elemanlar", "Maliyet",
+        "Maliyet Kat", "Alinan Kesif", "Kat Ozeti",
+    }
+    baslik_tekrari = {"Metraj Cetveli", "Kirik Olcu", "Elemanlar"}
+    filtre_baslik_satiri = {
+        "Metraj Cetveli": 1, "Kirik Olcu": 1, "Elemanlar": 1,
+        "Maliyet": 3, "YIGS Ozet": 6, "Alinan Kesif": 6,
+    }
+    for ws in wb.worksheets:
+        ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+        ws.page_setup.orientation = "landscape" if ws.title in yatay else "portrait"
+        ws.page_setup.paperSize = 9  # A4
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+        ws.oddFooter.center.text = "&A  |  Sayfa &P / &N"
+        ws.oddFooter.center.size = 8
+        if ws.title in baslik_tekrari:
+            ws.print_title_rows = "1:1"
+        baslik = filtre_baslik_satiri.get(ws.title)
+        if baslik and ws.max_row > baslik:
+            ws.auto_filter.ref = (
+                f"A{baslik}:{get_column_letter(ws.max_column)}{ws.max_row}"
+            )
+
+
 def excel_yaz(
     sonuc: MetrajSonucu,
     hedef: str | Path,
@@ -537,6 +582,7 @@ def excel_yaz(
 
         kesif_sayfasi_yaz(wb, kesif_hesapla(sonuc, ayarlar))
 
+    _rapor_bitir(wb)
     hedef.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(hedef))
     return hedef
@@ -716,6 +762,7 @@ def excel_yaz_toplu(
             _sayfa_maliyet(wb, birlesik, None)
             _sayfa_maliyet_ozet(wb, None)
 
+    _rapor_bitir(wb)
     hedef.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(hedef))
     return hedef

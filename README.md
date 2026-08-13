@@ -151,6 +151,10 @@ Every metraj workbook also gets an "Alinan Kesif" sheet with like-poz
 quantities summed into single rows (No | Poz | Imalat | Birim | Miktar |
 Birim Fiyat | Tutar), split into sections with ara/Kdv/genel totals.
 
+Every sheet is print/PDF-ready (A4; wide sheets landscape, header row
+repeated on each page, page-number footer) and the data sheets carry
+auto-filters — "Dosya > Yazdir (PDF)" yields a clean deliverable.
+
 ### Approximate cost from a previous run
 
 ```bash

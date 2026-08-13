@@ -284,10 +284,13 @@ def kesif_sayfasi_yaz(wb: Workbook, k: dict, sayfa: str = "Alinan Kesif") -> Non
 
 def kesif_excel_yaz(k: dict, hedef: str | Path) -> Path:
     """Kesif tablosunu ayri, ihale teslimine hazir bir Excel dosyasina yazar."""
+    from hakedis.report.excel import _rapor_bitir
+
     hedef = Path(hedef)
     wb = Workbook()
     wb.remove(wb.active)
     kesif_sayfasi_yaz(wb, k)
+    _rapor_bitir(wb)
     hedef.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(hedef))
     return hedef
