@@ -175,6 +175,82 @@ def komut_maliyet(args) -> int:
     return 0
 
 
+def komut_kesif(args) -> int:
+    """Kalip plani veya metraj JSON'undan poz bazli 'alinan kesif' cikarir."""
+    from hakedis.config import ayarlari_yukle as _yukle
+    from hakedis.kesif import kesif_excel_yaz, kesif_hesapla, kesif_konsol
+    from hakedis.model import ElemanTipi, KirikOlcuSatiri, MetrajSonucu
+
+    ayarlar = ayarlari_yukle(args.config)
+    gir_dosya = Path(args.girdi)
+
+    if gir_dosya.suffix.lower() in (".dwg", ".dxf", ".pdf"):
+        from hakedis.metraj import plandan_metraj
+
+        ayarlar = ayarlar.guncelle(
+            kat_adi=getattr(args, "kat_adi", None),
+            kat_yuksekligi=getattr(args, "kat_yuksekligi", None),
+            doseme_kalinligi=getattr(args, "doseme_kalinligi", None),
+        )
+        donati_dosya = getattr(args, "donati", None)
+        if donati_dosya:
+            ayarlar.ham.setdefault("donati", {})["plan_okuma"] = True
+        sonuc, _ = plandan_metraj(
+            str(gir_dosya), ayarlar, donati_dosya=donati_dosya
+        )
+    else:
+        veri = json.loads(gir_dosya.read_text(encoding="utf-8"))
+        satirlar = (
+            veri["satirlar"]
+            if isinstance(veri, dict) and "satirlar" in veri
+            else veri
+        )
+
+        def _tip(t: str) -> ElemanTipi:
+            try:
+                return ElemanTipi(t)
+            except ValueError:  # pragma: no cover
+                return ElemanTipi.BILINMEYEN
+
+        sonuc = MetrajSonucu(
+            kat=str(veri.get("kat", "")) if isinstance(veri, dict) else "",
+            kaynak_dosya=(
+                str(veri.get("kaynak_dosya", "")) if isinstance(veri, dict) else ""
+            ),
+            satirlar=[
+                KirikOlcuSatiri(
+                    poz=s["poz"],
+                    eleman_adi=s.get("eleman", ""),
+                    tip=_tip(s.get("tip", "Bilinmeyen")),
+                    tanim=s.get("tanim", ""),
+                    benzer=float(s.get("benzer", 1) or 1),
+                    en=float(s["en"]) if s.get("en") is not None else None,
+                    boy=float(s["boy"]) if s.get("boy") is not None else None,
+                    yukseklik=(
+                        float(s["yukseklik"]) if s.get("yukseklik") is not None else None
+                    ),
+                    alan=float(s["alan"]) if s.get("alan") is not None else None,
+                    hacim=float(s["hacim"]) if s.get("hacim") is not None else None,
+                    kg=float(s["demir"]) if s.get("demir") is not None else None,
+                    birim=s.get("birim", ""),
+                    formul=s.get("formul", ""),
+                    kat=s.get("kat", ""),
+                    detay=s.get("detay", []),
+                    dusum_mu=bool(s.get("dusum")),
+                )
+                for s in satirlar
+            ],
+        )
+
+    kesif = kesif_hesapla(sonuc, ayarlar)
+    print(kesif_konsol(kesif))
+
+    if args.cikti:
+        hedef = kesif_excel_yaz(kesif, Path(args.cikti))
+        print(f"\nAlinan kesif yazildi: {hedef}")
+    return 0
+
+
 def komut_katmanlar(args) -> int:
     """Cizimdeki katmanlari ve hangi tipe eslestiklerini gosterir."""
     from hakedis.readers import cizim_oku
@@ -673,6 +749,27 @@ Cok katli / cok paftali:
     mk.add_argument("metraj_json", help="`--json` ile uretilmis metraj dosyasi")
     mk.add_argument("--config", "-c", help="Ofis yapilandirma dosyasi (YAML)")
     mk.set_defaults(func=komut_maliyet)
+
+    ks = alt.add_parser(
+        "kesif",
+        help="Kalip plani veya metraj JSON'undan poz bazli 'alinan kesif' cikar",
+    )
+    ks.add_argument(
+        "girdi", help="Kalip plani (.dwg/.dxf/.pdf) veya `--json` metraj dosyasi"
+    )
+    ks.add_argument("--config", "-c", help="Ofis yapilandirma dosyasi (YAML)")
+    ks.add_argument("--cikti", "-o", help="Kesif Excel cikti yolu (.xlsx)")
+    ks.add_argument("--kat-yuksekligi", dest="kat_yuksekligi", type=float,
+                    help="Kat yuksekligi (m), varsayilan 3.00")
+    ks.add_argument("--doseme-kalinligi", dest="doseme_kalinligi", type=float,
+                    help="Doseme kalinligi (m), varsayilan 0.15")
+    ks.add_argument("--kat", dest="kat_adi", help="Kat adi (ornek: '3. Normal Kat')")
+    ks.add_argument(
+        "--donati",
+        help="Donati plani dosyasi (.dwg/.dxf/.pdf); plan girdisinde "
+        "cap/adet/aralik etiketlerinden kg dahil edilir",
+    )
+    ks.set_defaults(func=komut_kesif)
 
     pi = alt.add_parser("pdf-incele", help="PDF paftasindaki renkleri/olcegi incele")
     pi.add_argument("dosya", help="PDF dosyasi")

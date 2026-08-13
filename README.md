@@ -133,7 +133,23 @@ hakedis mahal mahal_plani.dxf -v      # list rooms and their quantities
 
 # 7. Sta4CAD formwork/temel plan (DWG/DXF with Sta4CAD layer names)
 hakedis metraj sta4cad_kalip.dwg --sta4cad
+
+# 8. Donati (rebar) plan: read cap/adet/aralik labels into kg instead of
+#    coefficient-based approximate demir
+hakedis metraj kalip.dxf --donati donati_plani.dxf
 ```
+
+### Alinan kesif (tender-ready, poz-grouped BOQ)
+
+```bash
+# From a plan (computes the take-off first) or from a previous --json run
+hakedis kesif kalip.dxf --cikti kesif.xlsx
+hakedis kesif sonuc.json --config ofis.yml --cikti kesif.xlsx
+```
+
+Every metraj workbook also gets an "Alinan Kesif" sheet with like-poz
+quantities summed into single rows (No | Poz | Imalat | Birim | Miktar |
+Birim Fiyat | Tutar), split into sections with ara/Kdv/genel totals.
 
 ### Approximate cost from a previous run
 

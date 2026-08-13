@@ -533,6 +533,10 @@ def excel_yaz(
             _sayfa_maliyet(wb, sonuc, None)
             _sayfa_maliyet_ozet(wb, None)
 
+        from hakedis.kesif import kesif_hesapla, kesif_sayfasi_yaz
+
+        kesif_sayfasi_yaz(wb, kesif_hesapla(sonuc, ayarlar))
+
     hedef.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(hedef))
     return hedef
