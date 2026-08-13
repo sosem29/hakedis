@@ -36,6 +36,13 @@ def mahal_plani(tmp_path_factory) -> Path:
 
 
 @pytest.fixture(scope="module")
+def donati_plani(tmp_path_factory) -> Path:
+    from tests.test_donati import _donati_plani
+
+    return _donati_plani(tmp_path_factory.mktemp("web") / "donati.dxf")
+
+
+@pytest.fixture(scope="module")
 def client():
     return TestClient(app)
 
@@ -148,6 +155,24 @@ class TestMetraj:
         assert kap == pytest.approx(37.0, abs=1e-3)
         siva = next(s for s in satirlar if s["eleman"] == "SIVA")
         assert siva["alan"] == pytest.approx(102.0, abs=1e-3)
+
+    def test_metraj_donati_dosyasi(self, client, plan, donati_plani):
+        r = client.post(
+            "/api/metraj",
+            files={
+                "dosya": ("kalip_plani.dxf", plan.read_bytes(), "application/dxf"),
+                "donati_dosya": ("donati.dxf", donati_plani.read_bytes(), "application/dxf"),
+            },
+        )
+        assert r.status_code == 200, r.text
+        veri = r.json()
+        # donati plani otomatik plan_okuma acar ve plan esasli kg satiri uretir
+        assert veri["parametreler"]["donati"]["etiket"] == 3
+        plan_satirlar = [
+            s for s in veri["satirlar"] if "DONATI PLANINDAN" in (s["tanim"] or "")
+        ]
+        assert plan_satirlar
+        assert any("KATSAYI" in (s["tanim"] or "") for s in veri["satirlar"]) is False
 
 
 class TestToplu:

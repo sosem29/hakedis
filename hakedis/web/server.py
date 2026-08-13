@@ -343,6 +343,7 @@ async def proje_sil(ad: str) -> dict:
 async def metraj(
     dosya: UploadFile = File(...),
     mahal_dosya: UploadFile | None = File(None),
+    donati_dosya: UploadFile | None = File(None),
     ayarlar: str | None = Form(None),
     yaml: str | None = Form(None),
     kat_adi: str | None = Form(None),
@@ -367,9 +368,12 @@ async def metraj(
     ayarlar_nesnesi = _ezmeleri_uygula(_ayarlari_kur(ayarlar, yaml), ezmeler)
     yol = await _kaydet(dosya)
     mahal_yolu = await _kaydet(mahal_dosya) if mahal_dosya else None
+    donati_yolu = await _kaydet(donati_dosya) if donati_dosya else None
+    if donati_yolu:
+        ayarlar_nesnesi.ham.setdefault("donati", {})["plan_okuma"] = True
     try:
         sonuc, _ = plandan_metraj(
-            yol, ayarlar_nesnesi, mahal_dosya=mahal_yolu
+            yol, ayarlar_nesnesi, mahal_dosya=mahal_yolu, donati_dosya=donati_yolu
         )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(422, f"Metraj uretilemedi: {e}")
@@ -377,6 +381,8 @@ async def metraj(
         Path(yol).unlink(missing_ok=True)
         if mahal_yolu:
             Path(mahal_yolu).unlink(missing_ok=True)
+        if donati_yolu:
+            Path(donati_yolu).unlink(missing_ok=True)
 
     from hakedis.maliyet import maliyet_hesapla
     from hakedis.report.veri import sonuc_verisi
@@ -398,6 +404,7 @@ async def metraj(
 async def toplu(
     dosyalar: list[UploadFile] = File(...),
     mahal_dosya: UploadFile | None = File(None),
+    donati_dosya: UploadFile | None = File(None),
     kat_adlari: str | None = Form(None),
     kat_adetleri: str | None = Form(None),
     ayarlar: str | None = Form(None),
@@ -438,13 +445,19 @@ async def toplu(
     sonuclar = []
     gecici: list[str] = []
     mahal_yolu = await _kaydet(mahal_dosya) if mahal_dosya else None
+    donati_yolu = await _kaydet(donati_dosya) if donati_dosya else None
+    if donati_yolu:
+        ayarlar_nesnesi.ham.setdefault("donati", {})["plan_okuma"] = True
     try:
         for i, d in enumerate(dosyalar):
             yol = await _kaydet(d)
             gecici.append(yol)
             kat = adlar[i] if i < len(adlar) else Path(d.filename or "").stem
             sonuc, _ = plandan_metraj(
-                yol, ayarlar_nesnesi.guncelle(kat_adi=kat), mahal_dosya=mahal_yolu
+                yol,
+                ayarlar_nesnesi.guncelle(kat_adi=kat),
+                mahal_dosya=mahal_yolu,
+                donati_dosya=donati_yolu,
             )
             sonuclar.append(sonuc)
     except Exception as e:  # noqa: BLE001
@@ -454,6 +467,8 @@ async def toplu(
             Path(yol).unlink(missing_ok=True)
         if mahal_yolu:
             Path(mahal_yolu).unlink(missing_ok=True)
+        if donati_yolu:
+            Path(donati_yolu).unlink(missing_ok=True)
 
     if adetler:
         sonuclar = sonuclari_cogalt(sonuclar, adetler)

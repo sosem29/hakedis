@@ -85,7 +85,12 @@ def komut_metraj(args) -> int:
 
     ayarlar = _ayarlari_hazirla(args)
     mahal_dosya = getattr(args, "mahal", None)
-    sonuc, _ = plandan_metraj(args.dosya, ayarlar, mahal_dosya=mahal_dosya)
+    donati_dosya = getattr(args, "donati", None)
+    if donati_dosya:
+        ayarlar.ham.setdefault("donati", {})["plan_okuma"] = True
+    sonuc, _ = plandan_metraj(
+        args.dosya, ayarlar, mahal_dosya=mahal_dosya, donati_dosya=donati_dosya
+    )
 
     print(konsol_ozeti(sonuc, ayrintili=args.ayrintili))
 
@@ -422,11 +427,16 @@ def komut_toplu(args) -> int:
     temel = _ayarlari_hazirla(args)
     isler = _toplu_isleri_hazirla(args, temel)
     mahal_dosya = getattr(args, "mahal", None)
+    donati_dosya = getattr(args, "donati", None)
+    if donati_dosya:
+        temel.ham.setdefault("donati", {})["plan_okuma"] = True
 
     sonuclar: list = []
     for kat, dosya, ayarlar in isler:
         print(f"[toplu] {kat}: {dosya} ...", file=sys.stderr)
-        sonuc, _ = plandan_metraj(dosya, ayarlar, mahal_dosya=mahal_dosya)
+        sonuc, _ = plandan_metraj(
+            dosya, ayarlar, mahal_dosya=mahal_dosya, donati_dosya=donati_dosya
+        )
         sonuclar.append(sonuc)
 
     adetler = _adet_listesi(args)
@@ -575,6 +585,11 @@ Cok katli / cok paftali:
         help="Sta4CAD kalip/temel plani profili: ek katman eslemeleri ve "
         "'Temel' katmanini doseme say",
     )
+    m.add_argument(
+        "--donati",
+        help="Donati plani dosyasi (.dwg/.dxf/.pdf); verilirse katsayi "
+        "yerine cap/adet/aralik etiketlerinden kg satirlari uretilir",
+    )
 
     t = alt.add_parser(
         "toplu",
@@ -639,6 +654,11 @@ Cok katli / cok paftali:
         "--sta4cad",
         action="store_true",
         help="Sta4CAD kalip/temel plani profili (ek katman eslemeleri)",
+    )
+    t.add_argument(
+        "--donati",
+        help="Tek bir donati plani dosyasi (.dwg/.dxf/.pdf); verilirse tum "
+        "kayitlara uygulanir ve katsayi yerine plan esasli kg uretilir",
     )
     t.set_defaults(func=komut_toplu)
 

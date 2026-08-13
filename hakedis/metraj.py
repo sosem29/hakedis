@@ -886,13 +886,27 @@ def metraj_hesapla(
     ayarlar: Ayarlar,
     uyarilar: list[str] | None = None,
     mahaller: list | None = None,
+    donati_okumalar: list | None = None,
 ) -> MetrajSonucu:
     """Tespit edilmis elemanlardan kirik olcu metraj cetvelini uretir.
 
     `mahaller` verilirse (mahal planindan okunan odalar) kaplama/tesviye/
     siva satirlari formkorku yaklasikligi yerine oda bazinda uretilir.
+
+    `donati_okumalar` verilirse (donati planindan okunan cap/adet/aralik
+    etiketleri) katsayi esasli yaklasik demir yerine plan esasli kg satirlari
+    uretilir.
     """
     kat = ayarlar.kat_adi
+    donati_plan = bool(
+        donati_okumalar
+        and bool(ayarlar.al("donati.plan_okuma", False))
+    )
+    if donati_plan:
+        # katsayi esasli _donati_satiri satirlari bu kat icin devre disi;
+        # gercek plan satirlari sona eklenir.
+        donati_eski = ayarlar.ham.setdefault("donati", {}).get("aktif")
+        ayarlar.ham["donati"]["aktif"] = False
     for e in elemanlar:
         if not e.kat:
             e.kat = kat
@@ -955,6 +969,18 @@ def metraj_hesapla(
                 "okunamadigi icin kesin bedele esas degerler icin mahal "
                 "planlarini kullanin."
             )
+    if donati_plan:
+        from hakedis.donati import donati_satirlari
+
+        H, _ = _net_yukseklik(ayarlar)
+        ek = donati_satirlari(donati_okumalar, elemanlar, ayarlar, H)
+        if ek:
+            satirlar.extend(ek)
+            sonuc_uyarilari.append(
+                "Donati metraji DONATI PLANINDAN okunan cap/adet/aralik "
+                "etiketlerinden uretildi; kenetlenme/bindirme/acilim ve "
+                "pas/kanca kabulleri icin donati paftasini kontrol edin."
+            )
     uyarilar = sonuc_uyarilari
 
     sonuc = MetrajSonucu(
@@ -970,7 +996,9 @@ def metraj_hesapla(
         },
     )
 
-    if bool(ayarlar.al("donati.aktif", False)):
+    if donati_plan:
+        ayarlar.ham["donati"]["aktif"] = bool(donati_eski)
+    elif bool(ayarlar.al("donati.aktif", False)):
         sonuc.uyari_ekle(
             "Donati metraji KATSAYI esasli YAKLASIK degerdir; donati plani "
             "okunmaz. Demir (kg) satirlarini ofis katsayilariniza gore "
@@ -993,7 +1021,10 @@ def metraj_hesapla(
 
 
 def plandan_metraj(
-    dosya: str, ayarlar: Ayarlar, mahal_dosya: str | None = None
+    dosya: str,
+    ayarlar: Ayarlar,
+    mahal_dosya: str | None = None,
+    donati_dosya: str | None = None,
 ) -> tuple[MetrajSonucu, Cizim]:
     """Uctan uca: dosyayi oku, elemanlari tespit et, metraji hesapla."""
     from hakedis.detect import elemanlari_tespit_et
@@ -1009,13 +1040,26 @@ def plandan_metraj(
         mahaller, mahal_uyarilari = mahalleri_oku(mahal_dosya, ayarlar)
         uyarilar = list(uyarilar) + list(mahal_uyarilari)
 
-    sonuc = metraj_hesapla(elemanlar, ayarlar, uyarilar, mahaller)
+    donati_okumalar = None
+    if donati_dosya:
+        from hakedis.donati import donati_okumalari
+
+        d_cizim = cizim_oku(donati_dosya, ayarlar)
+        donati_okumalar = donati_okumalari(d_cizim.varliklar, ayarlar)
+        uyarilar = list(uyarilar) + [
+            "Donati plani okundu; donati etiketleri elemanlara konum "
+            "yakinligina gore atandi."
+        ]
+
+    sonuc = metraj_hesapla(elemanlar, ayarlar, uyarilar, mahaller, donati_okumalar)
     sonuc.kaynak_dosya = str(dosya)
     if mahaller is not None:
         sonuc.parametreler["mahal"] = {
             "adet": len(mahaller),
             "toplam_alan": round(sum(m.alan for m in mahaller), 3),
         }
+    if donati_okumalar is not None:
+        sonuc.parametreler["donati"] = {"etiket": len(donati_okumalar)}
     return sonuc, cizim
 
 

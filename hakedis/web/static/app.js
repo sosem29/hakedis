@@ -647,6 +647,8 @@ async function metrajCalistir() {
   fd.append("ayarlar", JSON.stringify(DURUM.yapilandirma));
   const mahal = $("#metraj-mahal").files[0];
   if (mahal) fd.append("mahal_dosya", mahal);
+  const donati = $("#metraj-donati").files[0];
+  if (donati) fd.append("donati_dosya", donati);
   const ek = {
     kat_adi: $("#metraj-kat-adi").value,
     olcek: $("#metraj-olcek").value,
@@ -813,6 +815,8 @@ async function topluCalistir() {
   fd.append("ayarlar", JSON.stringify(DURUM.yapilandirma));
   const mahal = $("#toplu-mahal").files[0];
   if (mahal) fd.append("mahal_dosya", mahal);
+  const donati = $("#toplu-donati").files[0];
+  if (donati) fd.append("donati_dosya", donati);
   const ek = {
     olcek: $("#toplu-olcek").value,
     kalibre: $("#toplu-kalibre").value,
@@ -1294,7 +1298,9 @@ function olaylariBagla() {
 
   birakAlaniYukle($("#metraj-birak"), $("#metraj-dosya"), () => { /* seçim bilgisi bırakma alanında */ });
   birakAlaniYukle($("#metraj-mahal-birak"), $("#metraj-mahal"), () => { /* seçim bilgisi bırakma alanında */ });
+  birakAlaniYukle($("#metraj-donati-birak"), $("#metraj-donati"), () => { /* seçim bilgisi bırakma alanında */ });
   birakAlaniYukle($("#toplu-mahal-birak"), $("#toplu-mahal"), () => { /* seçim bilgisi bırakma alanında */ });
+  birakAlaniYukle($("#toplu-donati-birak"), $("#toplu-donati"), () => { /* seçim bilgisi bırakma alanında */ });
   birakAlaniYukle($("#pdf-birak"), $("#pdf-dosya"), () => { /* seçim bilgisi bırakma alanında */ });
   birakAlaniYukle($("#esle-birak"), $("#esle-dosya"), () => { /* seçim bilgisi bırakma alanında */ });
 

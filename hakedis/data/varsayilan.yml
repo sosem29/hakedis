@@ -351,6 +351,17 @@ metraj:
 # yanina "kg" satiri eklenir ve cetvelde Demir (kg) sutunu dolar.
 donati:
   aktif: false
+  # Donati plani dosyasi verildiginde (CLI --donati / web "Donati plani")
+  # cap/adet/aralik etiketleri okunur ve katsayi yerine plan esasli kg
+  # satirlari uretilir. plan_okuma kapaliysa donati dosyasi yok sayilir.
+  plan_okuma: false
+  # Boyuna donatilarin kabul boyu katsayisi (kenetlenme + bindirme payi)
+  boy_katsayisi: 1.0
+  # Etriye pas payi (m) ve tek etriye kanca payi (m)
+  pas_payi: 0.03
+  etriye_kanca: 0.15
+  # Doseme mesh donatisi iki yonde mi cekilsin
+  mesh_iki_yon: true
   # kg demir / m3 beton (ofis ortalamalarınızı girin)
   katsayilar:
     kolon: 110
