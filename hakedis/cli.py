@@ -723,7 +723,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return int(args.func(args) or 0)
-    except (FileNotFoundError, ValueError, RuntimeError) as e:
+    except (FileNotFoundError, ValueError, RuntimeError, OSError) as e:
         print(f"\nHATA: {e}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:  # pragma: no cover

@@ -897,6 +897,7 @@ def metraj_hesapla(
     etiketleri) katsayi esasli yaklasik demir yerine plan esasli kg satirlari
     uretilir.
     """
+    ayarlar.dogrula_ve_hata()
     kat = ayarlar.kat_adi
     donati_plan = bool(
         donati_okumalar
@@ -1017,6 +1018,15 @@ def metraj_hesapla(
                 f"{e.ad} ({e.tip.value}) dusuk guvenle tespit edildi - "
                 + (e.notlar[0] if e.notlar else "kontrol edin")
             )
+
+    for s in sonuc.satirlar:
+        m = s.miktar
+        if m is not None and not math.isfinite(m):
+            sonuc.uyari_ekle(
+                f"'{s.tanim}' satirinda gecersiz (NaN/sonsuz) miktar uretildi - "
+                "plan geometrisini kontrol edin."
+            )
+            break
     return sonuc
 
 

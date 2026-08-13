@@ -14,3 +14,5 @@ venv/
 ornek/kalip_plani.dxf
 
 .DS_Store
+.coverage
+*.dwg

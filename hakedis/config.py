@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -93,6 +94,37 @@ class Ayarlar:
 
     def poz(self, anahtar: str) -> str:
         return str(self.al(f"pozlar.{anahtar}", ""))
+
+    def dogrula(self) -> list[str]:
+        """Yapilandirmadaki fiziksel sorunlari toplar (bos liste = gecerli).
+
+        Kat yuksekligi ve doseme kalinligi gibi degerler geometriyi belirler;
+        gecersiz (negatif, NaN, mantiksiz) degerler metrajda negatif ya da
+        NaN sonuclar uretir. Bu yuzden burada acikca raporlanirlar.
+        """
+        sorunlar: list[str] = []
+        H = self.kat_yuksekligi
+        t = self.doseme_kalinligi
+        if not math.isfinite(H) or H <= 0:
+            sorunlar.append(
+                f"kat.kat_yuksekligi gecersiz: {H!r} (pozitif sonlu bir sayi olmali)"
+            )
+        if not math.isfinite(t) or t < 0:
+            sorunlar.append(
+                f"kat.doseme_kalinligi gecersiz: {t!r} (sifir veya pozitif olmali)"
+            )
+        elif math.isfinite(H) and H > 0 and t >= H:
+            sorunlar.append(
+                f"kat.doseme_kalinligi ({t:g} m) kat yuksekliginden ({H:g} m) "
+                f"kucuk olmali; net kat yuksekligi sifirin altina iner"
+            )
+        return sorunlar
+
+    def dogrula_ve_hata(self) -> None:
+        """Gecersiz yapilandirmada ValueError firlatir."""
+        sorunlar = self.dogrula()
+        if sorunlar:
+            raise ValueError("Gecersiz yapilandirma: " + "; ".join(sorunlar))
 
     # -- katman esleme -------------------------------------------------------
     def katman_desenleri(self, tip: str) -> list[re.Pattern[str]]:
